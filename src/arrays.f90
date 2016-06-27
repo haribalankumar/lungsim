@@ -34,13 +34,26 @@ module arrays
 
   logical,allocatable :: expansile(:)
 
+  type admittance_bc
+    character (len=20) :: bc_type
+  end type admittance_bc
+  type, EXTENDS (admittance_bc) :: two_parameter
+     real(dp) :: admit_P1=1.0_dp
+     real(dp) :: admit_P2=1.0_dp
+  end type two_parameter
+  type, EXTENDS (two_parameter) :: three_parameter
+    real(dp) :: admit_P3=1.0_dp
+  end type three_parameter
+  type,EXTENDS (three_parameter) :: all_admit_bcs
+  end type all_admit_bcs
+
 ! temporary, for debugging:
   real(dp) :: unit_before
 
   private
   public set_node_field_value, elem_field, num_elems, elem_nodes, node_xyz, nodes, elems, &
     num_nodes, units, num_units, unit_field, node_field, dp, elem_cnct, elem_ordrs, elem_direction, &
-    elems_at_node, elem_symmetry, expansile, elem_units_below, maxgen
+    elems_at_node, elem_symmetry, expansile, elem_units_below, maxgen,all_admit_bcs
 
 contains
   subroutine set_node_field_value(row, col, value)
