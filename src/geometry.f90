@@ -658,7 +658,6 @@ contains
     else
       radius_type = 'no_taper'
     endif
-
 !!! note that 'constrict' should not be used here (so is set to 1.0).
 !!! this should be specified and used as part of a simulation, not when
 !!! reading in airway geometry
@@ -716,9 +715,11 @@ contains
                  endif
              endif
           elseif(surround.gt.1)then !Terminal airway - use first radius
-             read(unit=10, fmt="(a)", iostat=ierror) ctemp1
-             read(unit=10, fmt="(a)", iostat=ierror) ctemp1
-             read(unit=10, fmt="(a)", iostat=ierror) ctemp1
+                 read(unit=10, fmt="(a)", iostat=ierror) ctemp1
+                 read(unit=10, fmt="(a)", iostat=ierror) ctemp1
+                 if(index(ctemp1, "version number")>0) then
+                    read(unit=10, fmt="(a)", iostat=ierror) ctemp1
+                 endif
              if(index(ctemp1, "value")> 0) then
                 call get_final_real(ctemp1,radius)
                   if(radius_type.eq.'taper')then
@@ -740,14 +741,15 @@ contains
             elem_field(ne_radius_in,ne)=elem_field(ne_radius_out,elem_cnct(-1,1,ne))
          endif
          elem_field(ne_radius,ne)=(elem_field(ne_radius_in,ne)+elem_field(ne_radius_out,ne))/2
-       endif
-       !       ne_global=elems(noelem)
-       np1=elem_nodes(1,ne)
-       np2=elem_nodes(2,ne)
-       ! element volume
-       elem_field(ne_vol,ne) = PI * elem_field(ne_radius,ne)**2 * &
+       else
+         !       ne_global=elems(noelem)
+         np1=elem_nodes(1,ne)
+         np2=elem_nodes(2,ne)
+         ! element volume
+         elem_field(ne_vol,ne) = PI * elem_field(ne_radius,ne)**2 * &
             elem_field(ne_length,ne)
-       elem_field(ne_a_A,ne) = 1.0_dp ! set default for ratio a/A
+         elem_field(ne_a_A,ne) = 1.0_dp ! set default for ratio a/A
+       endif
     enddo
     call enter_exit(sub_name,2)
 
