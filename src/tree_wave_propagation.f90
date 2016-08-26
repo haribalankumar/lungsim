@@ -53,9 +53,10 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
   complex(dp), allocatable :: reflect(:,:)
   complex(dp), allocatable :: prop_const(:,:)
   complex(dp), allocatable :: p_factor(:,:)
-  complex(dp) :: pressure(n_time,no_freq+1),flow(n_time,no_freq+1)
-  real(dp) :: flow_phase,press_phase
-  real(dp) :: flow_amp,press_amp
+  complex(dp) :: pressure(n_time,no_freq+1),flow(n_time,no_freq+1),inlet_pressure(n_time,no_freq+1),&
+  inlet_flow(n_time,no_freq+1)
+  real(dp) :: flow_phase,press_phase,press_phase2
+  real(dp) :: flow_amp,press_amp,press_amp2
   integer :: AllocateStatus
 
   character(len=60) :: sub_name
@@ -102,7 +103,80 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
 
     call pressure_factor(no_freq,p_factor,reflect,prop_const)
    ! !Define the pressure flow waveform change from upstream vessels
+  time_step=n_time
 
+  pressure=0.0_dp
+  flow=0.0_dp
+  inlet_pressure=0.0_dp
+  inlet_flow=0.0_dp
+  do nf=1,no_freq-1
+     omega=nf*2*PI
+     !! Flow boundary conditions
+     !Pressure is offset by  1/eff_admit
+
+    ! write(*,*) realpart(p_factor(nf,9))&
+    ! ,imagpart(p_factor(nf,9))
+
+    write(*,*) realpart(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1))&
+     ,imagpart(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1))
+
+
+     !press_phase=atan2(imagpart(eff_admit(nf,1)),realpart(eff_admit(nf,1)))!*time_step/(2*pi*omega)
+     !do tt=1,time_step!timesteps
+     !  inlet_pressure(tt,nf)=inlet_pressure(tt,nf)+press_amp*(a(nf)*cos(omega*(tt-1)/time_step-press_phase)&
+     !     +b(nf)*sin(omega*(tt-1)/time_step-press_phase))
+     !  inlet_flow(tt,nf)=inlet_flow(tt,nf)+(a(nf)*cos(omega*(tt-1)/time_step)&
+     !     +b(nf)*sin(omega*(tt-1)/time_step))
+     !enddo
+    ! write(*,*) realpart(p_factor(nf,9))&
+     !,-1.0_dp*imagpart(p_factor(nf,9))
+     !press_amp2=abs(p_factor(nf,9))
+     !press_phase2=atan2(imagpart(p_factor(nf,9)),realpart(p_factor(nf,9)))!*time_step/(2*pi*omega)
+     !flow_amp=abs(eff_admit(nf,9))
+     !flow_phase=atan2(imagpart(eff_admit(nf,9)),realpart(eff_admit(nf,9)))!*time_step/(2*pi*omega)
+     !do tt=1,time_step!timesteps
+     !  pressure(tt,nf)=pressure(tt,nf)+press_amp*press_amp2*(a(nf)*cos(omega*(tt-1)/time_step-press_phase+press_phase2)&
+     !     +b(nf)*sin(omega*(tt-1)/time_step-press_phase+press_phase2))
+     !  flow(tt,nf)=flow(tt,nf)+flow_amp*press_amp*press_amp2*(a(nf)*cos(omega*(tt-1)/time_step-press_phase+press_phase2+flow_phase)&
+     !     +b(nf)*sin(omega*(tt-1)/time_step-press_phase+press_phase2+flow_phase))
+    ! enddo
+        !flow_amp=realpart(cmplx(a(nf),b(nf),8)*p_factor(nf,9))
+        !flow_phase=imagpart(cmplx(a(nf),b(nf),8)*p_factor(nf,9))
+        !flow_amp=cmplx(a(nf),b(nf))*eff_admit(nf,1)!*p_factor(nf,8)!eff_admit(nf,1)!as this stands with zeros this should give a flow that follows pressure
+        !!write(*,*) nf, eff_admit(nf,1), flow_amp, flow_phase
+       !do tt=1,time_step!timesteps
+
+        !pressure(tt,nf)=pressure(tt,nf)+press_amp*(a(nf)*cos(omega*(tt-1)/time_step+press_phase)&
+        !  +b(nf)*sin(omega*(tt-1)/time_step+press_phase))
+        !flow(tt,nf)=flow(tt,nf)+flow_amp*press_amp*(a(nf)*cos(omega*(tt-1)/time_step-flow_phase+press_phase)&
+        !  +b(nf)*sin(omega*(tt-1)/time_step-flow_phase+press_phase))!&
+
+        !flow(tt,nf)=flow(tt,nf)+flow_amp*cos(omega*(tt-1)/time_step)&
+        !  +flow_phase*sin(omega*(tt-1)/time_step) !this is equivalent if flow_apm=(a+ib)*eff_admit
+        !enddo
+    enddo
+    do tt=1,time_step
+      inlet_flow(tt,no_freq+1)=sum(inlet_flow(tt,1:no_freq))
+      inlet_pressure(tt,no_freq+1)=sum(inlet_pressure(tt,1:no_freq))
+      pressure(tt,no_freq+1)=sum(pressure(tt,1:no_freq))
+      flow(tt,no_freq+1)=sum(flow(tt,1:no_freq))
+    enddo
+
+
+
+    !do tt=1,time_step
+   ! write(*,*) 'inlet_pressure'
+   ! write(*,*) real(inlet_pressure(:,no_freq+1)),real(inlet_pressure(:,no_freq+1))
+   ! write(*,*) 'pressure at insonation site'
+   ! write(*,*) real(pressure(:,no_freq+1)),real(pressure(:,no_freq+1))
+   !write(*,*) 'inlet flow'
+   ! write(*,*) real(inlet_flow(:,no_freq+1)),real(inlet_flow(:,no_freq+1))
+   !  write(*,*) 'flow at insonation site'
+   ! write(*,*) real(flow(:,no_freq+1)),real(flow(:,no_freq+1))
+   ! write(*,*) 'steady comp',a0
+
+    !write(*,*) p_factor(1,1)
+    !enddo
     deallocate (eff_admit, STAT = AllocateStatus)
     deallocate (char_admit, STAT = AllocateStatus)
     deallocate (reflect, STAT = AllocateStatus)
@@ -328,7 +402,7 @@ end subroutine terminal_admittance
         !look for upstram element
         if(elem_cnct(-1,0,ne).eq.0)then !no upstream elements, inlet, ignore
         ne_up=1
-          p_factor(nf,ne)=(1)* &!assumes input admittance is the same as characteristic admittance for this vessel
+          p_factor(nf,ne)=(1.0_dp)* &!assumes input admittance is the same as characteristic admittance for this vessel
             exp(-1.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne))/&
             (1+reflect(nf,ne)*exp(-2.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne)))
         else
