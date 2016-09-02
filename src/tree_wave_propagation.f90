@@ -56,7 +56,7 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
   complex(dp) :: pressure(n_time,no_freq+1),flow(n_time,no_freq+1),inlet_pressure(n_time,no_freq+1),&
   inlet_flow(n_time,no_freq+1)
   real(dp) :: flow_phase,press_phase,press_phase2
-  real(dp) :: flow_amp,press_amp,press_amp2
+  real(dp) :: flow_amp,press_amp,press_amp2,Period
   integer :: AllocateStatus
 
   character(len=60) :: sub_name
@@ -77,7 +77,7 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
     !NOT YET IMPLEMENTED - CALL AN ERROR
     endif
 !! SET UP PARAMETERS DEFINING COMPLIANCE MODEL
-
+    Period=60.0_dp/72.0_dp
 !!ALLOCATE MEMORY
     allocate (eff_admit(1:no_freq,num_elems), STAT = AllocateStatus)
     if (AllocateStatus /= 0) STOP "*** Not enough memory for eff_admit array ***"
@@ -94,14 +94,14 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
     eff_admit=0.0_dp
 
     !Apply boundary conditions to terminal units
-    call terminal_admittance(no_freq,eff_admit,char_admit,bc)
+    call terminal_admittance(no_freq,eff_admit,char_admit,bc,Period)
     admittance_model='lachase_modified'
     !calculate characteristic admittance of each branch
-    call characteristic_admittance(admittance_model,no_freq,char_admit,prop_const)
+    call characteristic_admittance(admittance_model,no_freq,char_admit,prop_const,Period)
     ! calculate effective admittance through the tree
-    call tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const)
+    call tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,Period)
 
-    call pressure_factor(no_freq,p_factor,reflect,prop_const)
+    call pressure_factor(no_freq,p_factor,reflect,prop_const,Period)
    ! !Define the pressure flow waveform change from upstream vessels
   time_step=n_time
 
@@ -109,17 +109,31 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
   flow=0.0_dp
   inlet_pressure=0.0_dp
   inlet_flow=0.0_dp
+      write(*,*) 'insonationsitepressure'
   do nf=1,no_freq-1
-     omega=nf*2*PI
+     omega=nf*2*PI/Period
      !! Flow boundary conditions
      !Pressure is offset by  1/eff_admit
 
     ! write(*,*) realpart(p_factor(nf,9))&
     ! ,imagpart(p_factor(nf,9))
+    !PRessure at insob
 
-    write(*,*) realpart(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1))&
-     ,imagpart(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1))
+     write(*,*) abs(p_factor(nf,9)/eff_admit(nf,1)),'*np.exp(1j*',&
+     atan2(imagpart(p_factor(nf,9)/eff_admit(nf,1)),&
+     realpart(p_factor(nf,9)/eff_admit(nf,1))),'),'
 
+
+   ! write(*,*) abs(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1)),'*np.exp(1j*',&
+    ! atan2(imagpart(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1)),&
+    ! realpart(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1))),'),'
+    enddo
+    write(*,*) 'insonationsite'
+    do nf=1,no_freq-1
+     omega=nf*2*PI/Period
+        write(*,*) abs(eff_admit(nf,9)*p_factor(nf,9)/eff_admit(nf,1)),'*np.exp(1j*',&
+     atan2(imagpart(eff_admit(nf,9)*p_factor(nf,9)/eff_admit(nf,1)),&
+     realpart(eff_admit(nf,9)*p_factor(nf,9)/eff_admit(nf,1))),'),'
 
      !press_phase=atan2(imagpart(eff_admit(nf,1)),realpart(eff_admit(nf,1)))!*time_step/(2*pi*omega)
      !do tt=1,time_step!timesteps
@@ -189,7 +203,7 @@ end subroutine evaluate_wave_propagation
 !##############################################################################
 !
 !*characteristic_admittance* calculates the characteristic admittance of each
-subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_const)
+subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_const,Period)
 !DEC$ ATTRIBUTES DLLEXPORT, ALIAD:"SO_characteristic_admittance: characteristic_admittance
   use other_consts, only: MAX_STRING_LEN
   use indices
@@ -200,6 +214,7 @@ subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_co
   integer, intent(in) :: no_freq
   complex(dp), intent(inout) :: char_admit(1:no_freq,num_elems)
   complex(dp), intent(inout) :: prop_const(1:no_freq,num_elems)
+    real(dp), intent(in) :: Period
   !local variables
   real(dp) :: L,C,R, G,omega
   real(dp) :: E,h_bar,h,density,viscosity !should be global - maybe express as alpha (i.e. pre multiply)
@@ -250,7 +265,7 @@ subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_co
         call exit(exit_status)
       endif
     do nf=1,no_freq
-      omega=nf*2*PI
+      omega=nf*2*PI/Period
       char_admit(nf,ne)=sqrt(G+cmplx(0.0_dp,1.0_dp,8)*omega*C)/sqrt(R+cmplx(0.0_dp,1.0_dp,8)*omega*L)
       prop_const(nf,ne)=sqrt((G+cmplx(0.0_dp,1.0_dp,8)*omega*C)*(R+cmplx(0.0_dp,1.0_dp,8)*omega*L))/elem_field(ne_length,ne)
     ! if(ne.eq.10)then
@@ -265,7 +280,7 @@ end subroutine characteristic_admittance
 !##############################################################################
 !
 !*terminal_admittance* applies chosen admittance boundary conditions at the terminal units
-subroutine terminal_admittance(no_freq,eff_admit,char_admit,bc)
+subroutine terminal_admittance(no_freq,eff_admit,char_admit,bc,Period)
 !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_terminal_admittance: terminal_admittance
   use arrays,only: num_elems,all_admit_bcs,units,num_units
   use diagnostics, only: enter_exit
@@ -274,6 +289,7 @@ subroutine terminal_admittance(no_freq,eff_admit,char_admit,bc)
   complex(dp), intent(inout) :: eff_admit(1:no_freq,num_elems)
   complex(dp), intent(inout) :: char_admit(1:no_freq,num_elems)
   type(all_admit_bcs) :: bc
+  real(dp), intent(in) :: Period
   !local variables
   integer :: nf,ne,nunit
   real(dp) :: omega,R1,R2,C
@@ -286,7 +302,7 @@ subroutine terminal_admittance(no_freq,eff_admit,char_admit,bc)
       R1=bc%two_parameter%admit_P1
       C=bc%two_parameter%admit_P2
       do nf=1,no_freq !step through frequencies
-        omega=nf*2*PI
+        omega=nf*2*PI/Period
         do nunit=1,num_units
           ne=units(nunit)
          !temporarily store in eff_admit, to be added to the char admit
@@ -300,7 +316,7 @@ subroutine terminal_admittance(no_freq,eff_admit,char_admit,bc)
       R2=bc%three_parameter%admit_P2
       C=bc%three_parameter%admit_P3
       do nf=1,no_freq !step through frequencies
-        omega=nf*2*PI
+        omega=nf*2*PI/Period
         do nunit=1,num_units
           ne=units(nunit)
           !temporarily store in eff_admit, to be added to the char admit
@@ -316,7 +332,7 @@ end subroutine terminal_admittance
 !##################################################################
 !
 !*tree_resistance:* Calculates the total admittance of a tree
-  subroutine tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const)
+  subroutine tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,Period)
     use indices
     use arrays,only: dp,num_elems,elem_cnct,elem_field
     use diagnostics, only: enter_exit
@@ -325,6 +341,7 @@ end subroutine terminal_admittance
     complex(dp), intent(in) :: char_admit(1:no_freq,num_elems)
     complex(dp), intent(inout) :: reflect(1:no_freq,num_elems)
     complex(dp), intent(in) :: prop_const(1:no_freq,num_elems)
+    real(dp), intent(in) :: Period
 
     character(len=60) :: sub_name
 !local variables
@@ -337,7 +354,7 @@ end subroutine terminal_admittance
     call enter_exit(sub_name,1)
     reflect(:,:)=cmplx(0.0_dp,0.0_dp,8)
     do nf=1,no_freq
-      omega=nf*2*PI
+      omega=nf*2*PI/Period
       do ne=num_elems,1,-1
         daughter_admit=cmplx(0.0_dp,0.0_dp,8)!
         do num2=1,elem_cnct(1,0,ne)!will only do stuff to non-terminals will add one daughter if no branching
@@ -379,7 +396,7 @@ end subroutine terminal_admittance
 !##################################################################
 !
 !*pressure_factor:* Calculates change in pressure through tree
-  subroutine pressure_factor(no_freq,p_factor,reflect,prop_const)
+  subroutine pressure_factor(no_freq,p_factor,reflect,prop_const,Period)
     use indices
     use arrays,only: dp,num_elems,elem_cnct,elem_field
     use diagnostics, only: enter_exit
@@ -387,6 +404,8 @@ end subroutine terminal_admittance
     complex(dp), intent(inout) :: p_factor(1:no_freq,num_elems)
     complex(dp), intent(inout) :: reflect(1:no_freq,num_elems)
     complex(dp), intent(in) :: prop_const(1:no_freq,num_elems)
+    real(dp), intent(in) :: Period
+
 
 
     character(len=60) :: sub_name
@@ -397,7 +416,7 @@ end subroutine terminal_admittance
     sub_name = 'pressure_factor'
     call enter_exit(sub_name,1)
     do nf=1,no_freq
-      omega=nf*2*PI
+      omega=nf*2*PI/Period
       do ne=1,num_elems
         !look for upstram element
         if(elem_cnct(-1,0,ne).eq.0)then !no upstream elements, inlet, ignore
