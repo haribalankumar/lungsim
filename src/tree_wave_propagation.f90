@@ -56,7 +56,7 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
   complex(dp) :: pressure(n_time,no_freq+1),flow(n_time,no_freq+1),inlet_pressure(n_time,no_freq+1),&
   inlet_flow(n_time,no_freq+1)
   real(dp) :: flow_phase,press_phase,press_phase2
-  real(dp) :: flow_amp,press_amp,press_amp2,Period
+  real(dp) :: flow_amp,press_amp,press_amp2,harmonic_scale
   integer :: AllocateStatus
 
   character(len=60) :: sub_name
@@ -77,7 +77,7 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
     !NOT YET IMPLEMENTED - CALL AN ERROR
     endif
 !! SET UP PARAMETERS DEFINING COMPLIANCE MODEL
-    Period=60.0_dp/72.0_dp
+    harmonic_scale=72.0_dp/60.0_dp !frequency of first harmonic (Hz)
 !!ALLOCATE MEMORY
     allocate (eff_admit(1:no_freq,num_elems), STAT = AllocateStatus)
     if (AllocateStatus /= 0) STOP "*** Not enough memory for eff_admit array ***"
@@ -94,14 +94,14 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
     eff_admit=0.0_dp
 
     !Apply boundary conditions to terminal units
-    call terminal_admittance(no_freq,eff_admit,char_admit,bc,Period)
+    call terminal_admittance(no_freq,eff_admit,char_admit,bc,harmonic_scale)
     admittance_model='lachase_modified'
     !calculate characteristic admittance of each branch
-    call characteristic_admittance(admittance_model,no_freq,char_admit,prop_const,Period)
+    call characteristic_admittance(admittance_model,no_freq,char_admit,prop_const,harmonic_scale)
     ! calculate effective admittance through the tree
-    call tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,Period)
+    call tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmonic_scale)
 
-    call pressure_factor(no_freq,p_factor,reflect,prop_const,Period)
+    call pressure_factor(no_freq,p_factor,reflect,prop_const,harmonic_scale)
    ! !Define the pressure flow waveform change from upstream vessels
   time_step=n_time
 
@@ -109,9 +109,11 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
   flow=0.0_dp
   inlet_pressure=0.0_dp
   inlet_flow=0.0_dp
+
+
       write(*,*) 'insonationsitepressure'
   do nf=1,no_freq-1
-     omega=nf*2*PI/Period
+     omega=nf*2*PI*harmonic_scale
      !! Flow boundary conditions
      !Pressure is offset by  1/eff_admit
 
@@ -119,9 +121,9 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
     ! ,imagpart(p_factor(nf,9))
     !PRessure at insob
 
-     write(*,*) abs(p_factor(nf,9)/eff_admit(nf,1)),'*np.exp(1j*',&
-     atan2(imagpart(p_factor(nf,9)/eff_admit(nf,1)),&
-     realpart(p_factor(nf,9)/eff_admit(nf,1))),'),'
+     write(*,*) abs(p_factor(nf,10)/eff_admit(nf,1)),'*np.exp(1j*',&
+     atan2(imagpart(p_factor(nf,10)/eff_admit(nf,1)),&
+     realpart(p_factor(nf,10)/eff_admit(nf,1))),'),'
 
 
    ! write(*,*) abs(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1)),'*np.exp(1j*',&
@@ -130,10 +132,11 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
     enddo
     write(*,*) 'insonationsite'
     do nf=1,no_freq-1
-     omega=nf*2*PI/Period
-        write(*,*) abs(eff_admit(nf,9)*p_factor(nf,9)/eff_admit(nf,1)),'*np.exp(1j*',&
-     atan2(imagpart(eff_admit(nf,9)*p_factor(nf,9)/eff_admit(nf,1)),&
-     realpart(eff_admit(nf,9)*p_factor(nf,9)/eff_admit(nf,1))),'),'
+     omega=nf*2*PI*harmonic_scale
+
+        write(*,*) abs(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1)),'*np.exp(1j*',&
+       atan2(imagpart(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1)),&
+       realpart(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1))),'),'
 
      !press_phase=atan2(imagpart(eff_admit(nf,1)),realpart(eff_admit(nf,1)))!*time_step/(2*pi*omega)
      !do tt=1,time_step!timesteps
@@ -203,7 +206,7 @@ end subroutine evaluate_wave_propagation
 !##############################################################################
 !
 !*characteristic_admittance* calculates the characteristic admittance of each
-subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_const,Period)
+subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_const,harmonic_scale)
 !DEC$ ATTRIBUTES DLLEXPORT, ALIAD:"SO_characteristic_admittance: characteristic_admittance
   use other_consts, only: MAX_STRING_LEN
   use indices
@@ -214,7 +217,7 @@ subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_co
   integer, intent(in) :: no_freq
   complex(dp), intent(inout) :: char_admit(1:no_freq,num_elems)
   complex(dp), intent(inout) :: prop_const(1:no_freq,num_elems)
-    real(dp), intent(in) :: Period
+    real(dp), intent(in) :: harmonic_scale
   !local variables
   real(dp) :: L,C,R, G,omega
   real(dp) :: E,h_bar,h,density,viscosity !should be global - maybe express as alpha (i.e. pre multiply)
@@ -232,27 +235,33 @@ subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_co
   !!write(*,*) 'admittance_model',admittance_model
   do ne=1,num_elems
       if(admittance_model.eq.'lachase_standard')then
-        h=h_bar*elem_field(ne_radius_in0,ne)
-        C=3.0_dp*PI*elem_field(ne_radius_in0,ne)**3*elem_field(ne_length,ne)/(2.0_dp*h*E)
-        L=density*elem_field(ne_length,ne)/(4*PI*elem_field(ne_radius_in0,ne)**2)
+        h=h_bar*elem_field(ne_radius_out0,ne)
+        C=3.0_dp*PI*elem_field(ne_radius_out0,ne)**3*elem_field(ne_length,ne)/(2.0_dp*h*E)
+        L=density*elem_field(ne_length,ne)/(4*PI*elem_field(ne_radius_out0,ne)**2)
         R=8.0_dp*viscosity*elem_field(ne_length,ne)/ &
-            (PI*elem_field(ne_radius_in0,ne)**4) !laminar resistance
+            (PI*elem_field(ne_radius_out0,ne)**4) !laminar resistance
         G=0.0_dp
       elseif(admittance_model.eq.'lachase_modified')then
-        h=h_bar*elem_field(ne_radius_in0,ne)
-        C=3.0_dp*PI*elem_field(ne_radius_in0,ne)**3*elem_field(ne_length,ne)/(2.0_dp*h*E)!
+        !if(ne.ge.11)then
+        !  E=1.5e6_dp !Pa
+        !  else
+        !    E=1.5e6_dp !Pa
+        ! endif
+
+        h=h_bar*elem_field(ne_radius_out0,ne)
+        C=3.0_dp*PI*elem_field(ne_radius_out0,ne)**3*elem_field(ne_length,ne)/(2.0_dp*h*E)!
         L=9.0_dp*density*elem_field(ne_length,ne)&
-           /(4.0_dp*PI*elem_field(ne_radius_in0,ne)**2)!per unit length
+           /(4.0_dp*PI*elem_field(ne_radius_out0,ne)**2)!per unit length
         R=81.0_dp*viscosity*elem_field(ne_length,ne)/ &
-             (8.0_dp*PI*elem_field(ne_radius_in0,ne)**4) !laminar resistance per unit length
+             (8.0_dp*PI*elem_field(ne_radius_out0,ne)**4) !laminar resistance per unit length
         G=0.0_dp
         !!write(*,*) 'ne', ne, h, C, R,L,viscosity
       elseif(admittance_model.eq.'zhu_chesler')then
-        h=h_bar*elem_field(ne_radius_in0,ne)
-        C=3.0_dp*PI*elem_field(ne_radius_in0,ne)**3*elem_field(ne_length,ne)/(2.0_dp*h*E)
-        L=9.0_dp*density*elem_field(ne_length,ne)/(4.0_dp*PI*elem_field(ne_radius_in0,ne)**2)
+        h=h_bar*elem_field(ne_radius_out0,ne)
+        C=3.0_dp*PI*elem_field(ne_radius_out0,ne)**3*elem_field(ne_length,ne)/(2.0_dp*h*E)
+        L=9.0_dp*density*elem_field(ne_length,ne)/(4.0_dp*PI*elem_field(ne_radius_out0,ne)**2)
         R=8.0_dp*viscosity*elem_field(ne_length,ne)/ &
-              (PI*elem_field(ne_radius_in0,ne)**4) !laminar resistance
+              (PI*elem_field(ne_radius_out0,ne)**4) !laminar resistance
         G=0.0_dp
        ! !!write(*,*) 'ne', ne, h, C, R,L
       elseif(admittance_model.eq.'duan_zamir')then
@@ -265,7 +274,7 @@ subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_co
         call exit(exit_status)
       endif
     do nf=1,no_freq
-      omega=nf*2*PI/Period
+      omega=nf*2*PI*harmonic_scale
       char_admit(nf,ne)=sqrt(G+cmplx(0.0_dp,1.0_dp,8)*omega*C)/sqrt(R+cmplx(0.0_dp,1.0_dp,8)*omega*L)
       prop_const(nf,ne)=sqrt((G+cmplx(0.0_dp,1.0_dp,8)*omega*C)*(R+cmplx(0.0_dp,1.0_dp,8)*omega*L))/elem_field(ne_length,ne)
     ! if(ne.eq.10)then
@@ -273,14 +282,16 @@ subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_co
       !!write(*,*) 'prop_const', ne,nf, prop_const(nf,ne)
     ! endif
     enddo!nf
+      write(*,*) ne,elem_field(ne_radius_out0,ne)
   enddo!ne
+
   call enter_exit(sub_name,2)
 end subroutine characteristic_admittance
 !
 !##############################################################################
 !
 !*terminal_admittance* applies chosen admittance boundary conditions at the terminal units
-subroutine terminal_admittance(no_freq,eff_admit,char_admit,bc,Period)
+subroutine terminal_admittance(no_freq,eff_admit,char_admit,bc,harmonic_scale)
 !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_terminal_admittance: terminal_admittance
   use arrays,only: num_elems,all_admit_bcs,units,num_units
   use diagnostics, only: enter_exit
@@ -289,7 +300,7 @@ subroutine terminal_admittance(no_freq,eff_admit,char_admit,bc,Period)
   complex(dp), intent(inout) :: eff_admit(1:no_freq,num_elems)
   complex(dp), intent(inout) :: char_admit(1:no_freq,num_elems)
   type(all_admit_bcs) :: bc
-  real(dp), intent(in) :: Period
+  real(dp), intent(in) :: harmonic_scale
   !local variables
   integer :: nf,ne,nunit
   real(dp) :: omega,R1,R2,C
@@ -302,7 +313,7 @@ subroutine terminal_admittance(no_freq,eff_admit,char_admit,bc,Period)
       R1=bc%two_parameter%admit_P1
       C=bc%two_parameter%admit_P2
       do nf=1,no_freq !step through frequencies
-        omega=nf*2*PI/Period
+        omega=nf*2*PI*harmonic_scale
         do nunit=1,num_units
           ne=units(nunit)
          !temporarily store in eff_admit, to be added to the char admit
@@ -316,7 +327,7 @@ subroutine terminal_admittance(no_freq,eff_admit,char_admit,bc,Period)
       R2=bc%three_parameter%admit_P2
       C=bc%three_parameter%admit_P3
       do nf=1,no_freq !step through frequencies
-        omega=nf*2*PI/Period
+        omega=nf*2*PI*harmonic_scale
         do nunit=1,num_units
           ne=units(nunit)
           !temporarily store in eff_admit, to be added to the char admit
@@ -332,7 +343,7 @@ end subroutine terminal_admittance
 !##################################################################
 !
 !*tree_resistance:* Calculates the total admittance of a tree
-  subroutine tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,Period)
+  subroutine tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmonic_scale)
     use indices
     use arrays,only: dp,num_elems,elem_cnct,elem_field
     use diagnostics, only: enter_exit
@@ -341,7 +352,7 @@ end subroutine terminal_admittance
     complex(dp), intent(in) :: char_admit(1:no_freq,num_elems)
     complex(dp), intent(inout) :: reflect(1:no_freq,num_elems)
     complex(dp), intent(in) :: prop_const(1:no_freq,num_elems)
-    real(dp), intent(in) :: Period
+    real(dp), intent(in) :: harmonic_scale
 
     character(len=60) :: sub_name
 !local variables
@@ -354,7 +365,7 @@ end subroutine terminal_admittance
     call enter_exit(sub_name,1)
     reflect(:,:)=cmplx(0.0_dp,0.0_dp,8)
     do nf=1,no_freq
-      omega=nf*2*PI/Period
+      omega=nf*2*PI*harmonic_scale
       do ne=num_elems,1,-1
         daughter_admit=cmplx(0.0_dp,0.0_dp,8)!
         do num2=1,elem_cnct(1,0,ne)!will only do stuff to non-terminals will add one daughter if no branching
@@ -396,7 +407,7 @@ end subroutine terminal_admittance
 !##################################################################
 !
 !*pressure_factor:* Calculates change in pressure through tree
-  subroutine pressure_factor(no_freq,p_factor,reflect,prop_const,Period)
+  subroutine pressure_factor(no_freq,p_factor,reflect,prop_const,harmonic_scale)
     use indices
     use arrays,only: dp,num_elems,elem_cnct,elem_field
     use diagnostics, only: enter_exit
@@ -404,7 +415,7 @@ end subroutine terminal_admittance
     complex(dp), intent(inout) :: p_factor(1:no_freq,num_elems)
     complex(dp), intent(inout) :: reflect(1:no_freq,num_elems)
     complex(dp), intent(in) :: prop_const(1:no_freq,num_elems)
-    real(dp), intent(in) :: Period
+    real(dp), intent(in) :: harmonic_scale
 
 
 
@@ -416,7 +427,7 @@ end subroutine terminal_admittance
     sub_name = 'pressure_factor'
     call enter_exit(sub_name,1)
     do nf=1,no_freq
-      omega=nf*2*PI/Period
+      omega=nf*2*PI*harmonic_scale
       do ne=1,num_elems
         !look for upstram element
         if(elem_cnct(-1,0,ne).eq.0)then !no upstream elements, inlet, ignore

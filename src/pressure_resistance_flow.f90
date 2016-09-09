@@ -51,7 +51,7 @@ contains
     logical :: ADD=.FALSE.,CONVERGED=.FALSE.
     character(len=60) :: sub_name,mesh_type,vessel_type,mechanics_type,bc_type,grav_type
     integer :: grav_dirn,no,depvar,KOUNT,nz,ne,SOLVER_FLAG,KOUNT2
-    real(dp) :: MIN_ERR,N_MIN_ERR,ptrans,beta,Go_artery,Ptm_max,grav_factor,pleural_density,Pin_new,ERR_FLOW
+    real(dp) :: MIN_ERR,N_MIN_ERR,ptrans,beta,Go_artery,Ptm_max,grav_factor,pleural_density,Pout_new,ERR_FLOW
 
     sub_name = 'evaluate_prq'
     call enter_exit(sub_name,1)
@@ -104,7 +104,7 @@ endif
     if (AllocateStatus /= 0) STOP "*** Not enough memory for FIX array ***"
 
 inletbc=bcinlet!2266.0_dp
-Pin_new=bcinlet
+Pout_new=bcoutlet
 outletbc=bcoutlet!666.7_dp
 ptrans=5.33_dp
 beta=1.0_dp
@@ -127,7 +127,7 @@ pleural_density=0.25_dp*0.1e-5_dp !kg/mm**3
 KOUNT2=0
 DO WHILE(KOUNT2.LE.30.OR.ERR_FLOW.GT.1.0e-6_dp)
 KOUNT2=KOUNT2+1
-   inletbc=Pin_new
+   outletbc=Pout_new
 
 !! Define boundary conditions
     !first call to define inlet boundary conditions
@@ -234,7 +234,7 @@ KOUNT2=KOUNT2+1
         CONVERGED=.TRUE.
       else
 !Update vessel radii based on predicted pressures and then update resistance through tree
-        call calc_press_area(grav_type,grav_vect,KOUNT,depvar_at_node,prq_solution,&
+        call calc_press_area(grav_type,grav_vect,KOUNT,KOUNT2,depvar_at_node,prq_solution,&
            mesh_dof,ptrans,beta,Go_artery,Ptm_max,pleural_density,vessel_type)
         call calculate_resistance(viscosity,density)
 !Put the ladder stuff here --> See solve11.f
@@ -261,10 +261,10 @@ KOUNT2=KOUNT2+1
     write(*,*) 'Inlet flow rate',elem_field(ne_flow,1),'mm3/3',targetflow
     write(*,*) 'Inlet resistance ',elem_field(ne_resist,1),'pa.s/mm3'
 
-    Pin_new=outletbc+targetflow*total_resistance
+    Pout_new=outletbc+targetflow*total_resistance
 
-    ERR_FLOW=(inletbc-Pin_new)/Pin_new
-    write(*,*) 'New inlet pressure ',Pin_new,'Pa'
+    ERR_FLOW=(outletbc-Pout_new)/Pout_new
+    write(*,*) 'New outlet pressure ',Pout_new,'Pa'
         deallocate (solver_solution, STAT = AllocateStatus)
     deallocate (SparseCol, STAT = AllocateStatus)
     deallocate (SparseVal, STAT = AllocateStatus)
@@ -862,7 +862,7 @@ subroutine calc_sparse_size(mesh_dof,depvar_at_elem,depvar_at_node,FIX,NonZeros,
 !
 !*calc_press_area:* Calculates new radii based on pressure area relnships
 
-subroutine calc_press_area(grav_type,grav_vect,KOUNT,depvar_at_node,prq_solution,&
+subroutine calc_press_area(grav_type,grav_vect,KOUNT,KOUNT2,depvar_at_node,prq_solution,&
     mesh_dof,ptrans,beta,Go_artery,Ptm_max,pleural_density,vessel_type)
 
     use indices
@@ -871,7 +871,7 @@ subroutine calc_press_area(grav_type,grav_vect,KOUNT,depvar_at_node,prq_solution
 
     character(len=60), intent(in) :: grav_type
     real(dp), intent(in) :: grav_vect(3)
-    integer,intent(in) :: KOUNT,mesh_dof
+    integer,intent(in) :: KOUNT,KOUNT2,mesh_dof
     integer,intent(in) :: depvar_at_node(num_nodes,0:2,2)
     real(dp),intent(in) ::  prq_solution(mesh_dof,2)
     real(dp),intent(in) :: ptrans,beta,Go_artery,Ptm_max,pleural_density
@@ -885,10 +885,11 @@ subroutine calc_press_area(grav_type,grav_vect,KOUNT,depvar_at_node,prq_solution
     character(len=60) :: sub_name
     sub_name = 'calc_press_area'
     call enter_exit(sub_name,1)
-    if(KOUNT.EQ.1)then !store initial, unstressed radius values
+    if(KOUNT.EQ.1.AND.KOUNT2.EQ.1)then !store initial, unstressed radius values
       do  ne=1,num_elems
         elem_field(ne_radius_in0,ne)=elem_field(ne_radius_in,ne)
-        elem_field(ne_radius_out0,ne)=elem_field(ne_radius_in,ne)
+        elem_field(ne_radius_out0,ne)=elem_field(ne_radius_out,ne)
+        write(*,*) ne,elem_field(ne_radius_out0,ne)
       enddo !elems
     endif
 
