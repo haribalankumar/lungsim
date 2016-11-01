@@ -6,7 +6,7 @@ Building
 There are two ways to build the pulmonary simulation library:
 
 #. Using CMake (recommended)
-#. Using a makefile which calls the libraries and control files that you need
+#. Using a makefile which calls the libraries and control files that you need (not supported/encouraged)
 
 The CMake builds the library outside of the source directory and allows for configuration via the command line or GUI.  CMake will configure the build files required for the current environment, on GNU/Linux and OS X this could be a Makefile or Xcode project and on Windows a Visual Studio solution file.  The supplied makefile shows an example of building your library. The library will build in the source directory with the flags set in the makefile itself.  
 

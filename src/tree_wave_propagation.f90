@@ -31,8 +31,9 @@ contains
 subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
     bc_params)
 !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_SOLVE_WAVE_PROPAGATION: SOLVE_WAVE_PROPAGATION
+  use indices
   use other_consts, only: MAX_STRING_LEN
-  use arrays, only: num_elems,num_nodes,all_admit_bcs
+  use arrays, only: num_elems,num_nodes,all_admit_bcs,elem_field
   use diagnostics, only: enter_exit
 
   integer, intent(in):: no_freq
@@ -111,67 +112,64 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
   inlet_flow=0.0_dp
 
 
-      write(*,*) 'insonationsitepressure'
-  do nf=1,no_freq-1
-     omega=nf*2*PI*harmonic_scale
-     !! Flow boundary conditions
-     !Pressure is offset by  1/eff_admit
-
-    ! write(*,*) realpart(p_factor(nf,9))&
-    ! ,imagpart(p_factor(nf,9))
-    !PRessure at insob
-
-     write(*,*) abs(p_factor(nf,10)/eff_admit(nf,1)),'*np.exp(1j*',&
-     atan2(imagpart(p_factor(nf,10)/eff_admit(nf,1)),&
-     realpart(p_factor(nf,10)/eff_admit(nf,1))),'),'
-
-
-   ! write(*,*) abs(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1)),'*np.exp(1j*',&
-    ! atan2(imagpart(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1)),&
-    ! realpart(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1))),'),'
-    enddo
+      !write(*,*) 'qfactor'
+ ! do nf=1,no_freq
+  !   omega=nf*2*PI*harmonic_scale
+    !PRessure at insonation site
+    !as we are using flow boundary conditions we need to divide flow in by the effective admittance of the first branch
+    !to get pressure then we use p_factor to move down the tree. This provides p0 for each branch
+     !write(*,*) abs(p_factor(nf,9)/eff_admit(nf,1)),',',&
+     !atan2(imagpart(p_factor(nf,9)/eff_admit(nf,1)),&
+     !realpart(p_factor(nf,9)/eff_admit(nf,1))),','
+    !enddo
     write(*,*) 'insonationsite'
-    do nf=1,no_freq-1
+   ! do nf=1,no_freq
+    ! omega=nf*2*PI*harmonic_scale
+    !    write(*,*) abs(eff_admit(nf,9)*p_factor(nf,9)/eff_admit(nf,1)),',',&
+    !   atan2(imagpart(eff_admit(nf,9)*p_factor(nf,9)/eff_admit(nf,1)),&
+    !   realpart(eff_admit(nf,9)*p_factor(nf,9)/eff_admit(nf,1))),','
+ !        write(*,*) abs(char_admit(nf,9)*p_factor(nf,9)/char_admit(nf,1)),',',&
+ !      atan2(imagpart(char_admit(nf,9)*p_factor(nf,9)/char_admit(nf,1)),&
+ !      realpart(char_admit(nf,9)*p_factor(nf,9)/char_admit(nf,1))),','
+
+
+
+
+   ! enddo
+        write(*,*) 'reflect_coeff'
+    do nf=1,no_freq
      omega=nf*2*PI*harmonic_scale
-
-        write(*,*) abs(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1)),'*np.exp(1j*',&
-       atan2(imagpart(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1)),&
-       realpart(eff_admit(nf,10)*p_factor(nf,10)/eff_admit(nf,1))),'),'
-
-     !press_phase=atan2(imagpart(eff_admit(nf,1)),realpart(eff_admit(nf,1)))!*time_step/(2*pi*omega)
-     !do tt=1,time_step!timesteps
-     !  inlet_pressure(tt,nf)=inlet_pressure(tt,nf)+press_amp*(a(nf)*cos(omega*(tt-1)/time_step-press_phase)&
-     !     +b(nf)*sin(omega*(tt-1)/time_step-press_phase))
-     !  inlet_flow(tt,nf)=inlet_flow(tt,nf)+(a(nf)*cos(omega*(tt-1)/time_step)&
-     !     +b(nf)*sin(omega*(tt-1)/time_step))
-     !enddo
-    ! write(*,*) realpart(p_factor(nf,9))&
-     !,-1.0_dp*imagpart(p_factor(nf,9))
-     !press_amp2=abs(p_factor(nf,9))
-     !press_phase2=atan2(imagpart(p_factor(nf,9)),realpart(p_factor(nf,9)))!*time_step/(2*pi*omega)
-     !flow_amp=abs(eff_admit(nf,9))
-     !flow_phase=atan2(imagpart(eff_admit(nf,9)),realpart(eff_admit(nf,9)))!*time_step/(2*pi*omega)
-     !do tt=1,time_step!timesteps
-     !  pressure(tt,nf)=pressure(tt,nf)+press_amp*press_amp2*(a(nf)*cos(omega*(tt-1)/time_step-press_phase+press_phase2)&
-     !     +b(nf)*sin(omega*(tt-1)/time_step-press_phase+press_phase2))
-     !  flow(tt,nf)=flow(tt,nf)+flow_amp*press_amp*press_amp2*(a(nf)*cos(omega*(tt-1)/time_step-press_phase+press_phase2+flow_phase)&
-     !     +b(nf)*sin(omega*(tt-1)/time_step-press_phase+press_phase2+flow_phase))
-    ! enddo
-        !flow_amp=realpart(cmplx(a(nf),b(nf),8)*p_factor(nf,9))
-        !flow_phase=imagpart(cmplx(a(nf),b(nf),8)*p_factor(nf,9))
-        !flow_amp=cmplx(a(nf),b(nf))*eff_admit(nf,1)!*p_factor(nf,8)!eff_admit(nf,1)!as this stands with zeros this should give a flow that follows pressure
-        !!write(*,*) nf, eff_admit(nf,1), flow_amp, flow_phase
-       !do tt=1,time_step!timesteps
-
-        !pressure(tt,nf)=pressure(tt,nf)+press_amp*(a(nf)*cos(omega*(tt-1)/time_step+press_phase)&
-        !  +b(nf)*sin(omega*(tt-1)/time_step+press_phase))
-        !flow(tt,nf)=flow(tt,nf)+flow_amp*press_amp*(a(nf)*cos(omega*(tt-1)/time_step-flow_phase+press_phase)&
-        !  +b(nf)*sin(omega*(tt-1)/time_step-flow_phase+press_phase))!&
-
-        !flow(tt,nf)=flow(tt,nf)+flow_amp*cos(omega*(tt-1)/time_step)&
-        !  +flow_phase*sin(omega*(tt-1)/time_step) !this is equivalent if flow_apm=(a+ib)*eff_admit
-        !enddo
+        write(*,*) abs(reflect(nf,1)),',',atan2(imagpart(reflect(nf,1)),&
+       realpart(reflect(nf,1))),','
     enddo
+
+    write(*,*) 'prop_const'
+    do nf=1,no_freq
+     omega=nf*2*PI*harmonic_scale
+        write(*,*) realpart(prop_const(nf,1)),imagpart(prop_const(nf,1))
+       ! write(*,*) abs(exp(-2.0_dp*prop_const(nf,9)*elem_field(ne_length,10))),',',&
+       ! atan2(imagpart(exp(-2.0_dp*prop_const(nf,9)*elem_field(ne_length,10))),&
+       !realpart(exp(-2.0_dp*prop_const(nf,9)*elem_field(ne_length,10)))),','
+    enddo
+
+
+  !  write(*,*) 'inlet_ref_coeff'
+  !  do nf=1,no_freq
+  !   omega=nf*2*PI*harmonic_scale
+  !      write(*,*) abs(reflect(nf,1)),',',atan2(imagpart(reflect(nf,1)),&
+  !     realpart(reflect(nf,1))),','
+  !  enddo
+
+   ! write(*,*) 'inlet reflect_offsett'
+   ! do nf=1,no_freq
+   ! omega=nf*2*PI*harmonic_scale
+   !    write(*,*) abs(exp(-2.0_dp*prop_const(nf,1)*elem_field(ne_length,1))),',',&
+   !    atan2(imagpart(exp(-2.0_dp*prop_const(nf,1)*elem_field(ne_length,1))),&
+   !    realpart(exp(-2.0_dp*prop_const(nf,1)*elem_field(ne_length,1)))),','
+   ! enddo
+
+
+
     do tt=1,time_step
       inlet_flow(tt,no_freq+1)=sum(inlet_flow(tt,1:no_freq))
       inlet_pressure(tt,no_freq+1)=sum(inlet_pressure(tt,1:no_freq))
@@ -227,7 +225,7 @@ subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_co
 
   sub_name = 'characteristic_admittance'
   call enter_exit(sub_name,1)
-  E=1.5e6_dp !Pa
+  E=15.0e5_dp !Pa
   h_bar=0.1_dp!this is a fraction of the radius so is unitless
   density=0.10500e-02_dp !g/mm^3
   viscosity=0.3500e-02_dp !pa.s=kg/m.s =.3e-2 = equivalent in g/(mm.s)
@@ -242,20 +240,15 @@ subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_co
             (PI*elem_field(ne_radius_out0,ne)**4) !laminar resistance
         G=0.0_dp
       elseif(admittance_model.eq.'lachase_modified')then
-        !if(ne.ge.11)then
-        !  E=1.5e6_dp !Pa
-        !  else
-        !    E=1.5e6_dp !Pa
-        ! endif
-
+        !write(*,*) 'rad', ne, elem_field(ne_radius_out0,ne)
         h=h_bar*elem_field(ne_radius_out0,ne)
-        C=3.0_dp*PI*elem_field(ne_radius_out0,ne)**3*elem_field(ne_length,ne)/(2.0_dp*h*E)!
-        L=9.0_dp*density*elem_field(ne_length,ne)&
+        C=3.0_dp*PI*elem_field(ne_radius_out0,ne)**3/(2.0_dp*h*E)!
+        L=9.0_dp*density&
            /(4.0_dp*PI*elem_field(ne_radius_out0,ne)**2)!per unit length
-        R=81.0_dp*viscosity*elem_field(ne_length,ne)/ &
+        R=81.0_dp*viscosity/ &
              (8.0_dp*PI*elem_field(ne_radius_out0,ne)**4) !laminar resistance per unit length
         G=0.0_dp
-        !!write(*,*) 'ne', ne, h, C, R,L,viscosity
+        !write(*,*) 'ne', ne, h, C, R,L,viscosity
       elseif(admittance_model.eq.'zhu_chesler')then
         h=h_bar*elem_field(ne_radius_out0,ne)
         C=3.0_dp*PI*elem_field(ne_radius_out0,ne)**3*elem_field(ne_length,ne)/(2.0_dp*h*E)
@@ -276,8 +269,10 @@ subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_co
     do nf=1,no_freq
       omega=nf*2*PI*harmonic_scale
       char_admit(nf,ne)=sqrt(G+cmplx(0.0_dp,1.0_dp,8)*omega*C)/sqrt(R+cmplx(0.0_dp,1.0_dp,8)*omega*L)
-      prop_const(nf,ne)=sqrt((G+cmplx(0.0_dp,1.0_dp,8)*omega*C)*(R+cmplx(0.0_dp,1.0_dp,8)*omega*L))/elem_field(ne_length,ne)
-    ! if(ne.eq.10)then
+      prop_const(nf,ne)=sqrt((G+cmplx(0.0_dp,1.0_dp,8)*omega*C)*(R+cmplx(0.0_dp,1.0_dp,8)*omega*L))
+     if(ne.ge.3)then
+        char_admit(nf,ne)=char_admit(nf,ne)*1000.0_dp
+     endif
       !!write(*,*) 'char_admit',ne,nf,  char_admit(nf,ne)
       !!write(*,*) 'prop_const', ne,nf, prop_const(nf,ne)
     ! endif
@@ -371,22 +366,22 @@ end subroutine terminal_admittance
         do num2=1,elem_cnct(1,0,ne)!will only do stuff to non-terminals will add one daughter if no branching
            ne2=elem_cnct(1,num2,ne)
            daughter_admit=daughter_admit+eff_admit(nf,ne2)
-           !!write(*,*) 'daughter', ne,ne2,nf,daughter_admit
         enddo
         if(elem_cnct(1,0,ne).gt.0)then !not a terminal
            reflect(nf,ne)=(char_admit(nf,ne)-daughter_admit)/&
             (char_admit(nf,ne)+daughter_admit)!double checked
-                     !  if(ne.ge.9) !write(*,*) ne, nf, reflect(nf,ne), daughter_admit
+                      ! if(ne.eq.1) write(*,*) ne, nf, char_admit(nf,ne), daughter_admit
            eff_admit(nf,ne)=char_admit(nf,ne)*(1&
             -reflect(nf,ne)*exp(-2.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne)))/&
             (1&
             +reflect(nf,ne)*exp(-2.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne)))!double checked
          else!a terminal
-           daughter_admit=eff_admit(nf,ne)
-           !write(*,*) eff_admit(nf,ne),nf,ne
+           daughter_admit=char_admit(nf,ne)
+           !eff_admit(nf,ne) !temp just make it the same
+           !write(*,*) char_admit(nf,ne),nf,ne
            reflect(nf,ne)=(char_admit(nf,ne)-daughter_admit)/&
             (char_admit(nf,ne)+daughter_admit)
-            !if(ne.ge.9) !write(*,*) ne, nf, reflect(nf,ne), daughter_admit
+          ! if(ne.eq.2)write(*,*) ne, nf, reflect(nf,ne), daughter_admit,char_admit(nf,ne)
            ! !write(*,*) 'term reflect',nf,daughter_admit, char_admit(nf,ne),reflect(nf,ne)
             !now we overwrite the effective admittance of the terminal to include reflection from the daughter.
            eff_admit(nf,ne)=char_admit(nf,ne)*(1&
@@ -394,10 +389,10 @@ end subroutine terminal_admittance
             (1&
             +reflect(nf,ne)*exp(-2.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne)))
          endif
-         if(ne.eq.9)then
-         write(*,*) 'Element 9 rf',nf, abs(reflect(nf,ne)),&
-           atan2(imagpart(reflect(nf,ne)),realpart(reflect(nf,ne)))/pi*180
-         endif
+         !if(ne.eq.9)then
+         !write(*,*) 'Element 9 rf',nf, abs(reflect(nf,ne)),&
+         !  atan2(imagpart(reflect(nf,ne)),realpart(reflect(nf,ne)))/pi*180
+         !endif
       enddo
     enddo!nf
 

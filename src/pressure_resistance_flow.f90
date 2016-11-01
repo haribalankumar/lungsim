@@ -124,27 +124,8 @@ pleural_density=0.25_dp*0.1e-5_dp !kg/mm**3
     call calc_depvar_maps(mesh_from_depvar,depvar_at_elem,&
                 depvar_totals,depvar_at_node,mesh_dof,num_vars)
 
-KOUNT2=0
-DO WHILE(KOUNT2.LE.30.OR.ERR_FLOW.GT.1.0e-6_dp)
-KOUNT2=KOUNT2+1
-   outletbc=Pout_new
-
-!! Define boundary conditions
-    !first call to define inlet boundary conditions
-    ADD=.FALSE.
-    call boundary_conditions(ADD,FIX,bc_type,grav_type,grav_vect,density,inletbc,outletbc,&
-      depvar_at_node,depvar_at_elem,prq_solution,mesh_dof)
-    !second call if simple tree need to define pressure bcs at all terminal branches
-    if(mesh_type.eq.'simple_tree')then
-        ADD=.TRUE.
-        call boundary_conditions(ADD,FIX,bc_type,grav_type,grav_vect,density,inletbc,outletbc,&
-            depvar_at_node,depvar_at_elem,prq_solution,mesh_dof)   
-    endif
-
- 
-!! Calculate resistance of each element
-   call calculate_resistance(density,viscosity)
-        
+KOUNT2=1
+KOUNT=1
 !! Calculate sparsity structure for solution matrices
     !Determine size of and allocate solution vectors/matrices
     call calc_sparse_size(mesh_dof,depvar_at_elem,depvar_at_node,FIX,NonZeros,MatrixSize)
@@ -161,98 +142,13 @@ KOUNT2=KOUNT2+1
     allocate (update_resistance_entries(num_elems), STAT = AllocateStatus)
     if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array ***"
     !calculate the sparsity structure
-    call calc_sparse_1dtree(density,FIX,grav_type,grav_vect,mesh_dof,depvar_at_elem, &
-        depvar_at_node,mesh_from_depvar, num_vars,NonZeros,MatrixSize,SparseCol,SparseRow,SparseVal,RHS, &
-        prq_solution,update_resistance_entries)
-!!! --ITERATIVE LOOP--
-    MIN_ERR=1.d10
-    N_MIN_ERR=0
-    KOUNT=0
-    do while(.NOT.CONVERGED)
-      KOUNT=KOUNT+1
-      print*, 'Outer loop iterations:',KOUNT
-!!! Initialise solution vector based on bcs and rigid vessel resistance
-      if(KOUNT.eq.1)then!set up boundary conditions
-        if(bc_type.eq.'pressure')then
-          call tree_resistance(total_resistance)
-          call initialise_solution(inletbc,outletbc,(inletbc-outletbc)/total_resistance, &
-              mesh_dof,prq_solution,depvar_at_node,depvar_at_elem,FIX)
-        else!flow BCs to be implemented
-           call initialise_solution(outletbc,outletbc,inletbc, &
-              mesh_dof,prq_solution,depvar_at_node,depvar_at_elem,FIX)
-        endif
-        !move initialisation to solver solution (skipping BCs).
-        no=0
-        do depvar=1,mesh_dof !loop over mesh dofs
-          if(.NOT.FIX(depvar))then
-            no=no+1
-            solver_solution(no)=prq_solution(depvar,1)
-          endif
-        enddo !mesh_dof
-      else!Need to update just the resistance values in the solution matrix
-        do ne=1,num_elems !update for all ne
-          nz=update_resistance_entries(ne)
-          SparseVal(nz)=-elem_field(ne_resist,ne) !Just updating resistance
-        enddo
-      endif!first or subsequent iteration
-!! ----CALL SOLVER----
-      call pmgmres_ilu_cr(MatrixSize, NonZeros, SparseRow, SparseCol, SparseVal, &
-         solver_solution, RHS, 500, 500,1.d-5,1.d-4,SOLVER_FLAG)
-       if(SOLVER_FLAG == 0)then
-          print *, 'Warning: pmgmres has reached max iterations. Solution may not be valid if this warning persists'
-       elseif(SOLVER_FLAG ==2)then
-          print *, 'ERROR: pmgmres has failed to converge'
-          deallocate (mesh_from_depvar, STAT = AllocateStatus)
-          deallocate (depvar_at_elem, STAT = AllocateStatus)
-          deallocate (depvar_at_node, STAT = AllocateStatus)
-          deallocate (prq_solution, STAT = AllocateStatus)
-          deallocate (FIX, STAT = AllocateStatus)
-          deallocate (solver_solution, STAT = AllocateStatus)
-          deallocate (SparseCol, STAT = AllocateStatus)
-          deallocate (SparseVal, STAT = AllocateStatus)
-          deallocate (SparseRow, STAT = AllocateStatus)
-          deallocate (RHS, STAT = AllocateStatus)
-          deallocate (update_resistance_entries, STAT=AllocateStatus)
-          exit
-       endif
-!!--TRANSFER SOLVER SOLUTIONS TO FULL SOLUTIONS
-      ERR=0.0_dp
-      no=0
-      do depvar=1,mesh_dof
-         if(.NOT.FIX(depvar)) THEN
-            no=no+1
-            prq_solution(depvar,2)=prq_solution(depvar,1) !temp storage of previous solution
-            prq_solution(depvar,1)=solver_solution(no) !new pressure & flow solutions
-            if(DABS(prq_solution(depvar,1)).GT.0.d-6)THEN
-               ERR=ERR+(prq_solution(depvar,2)-prq_solution(depvar,1))**2.d0/prq_solution(depvar,1)**2
-            endif
-         endif
-      enddo !no2
-!rigid vessels no need to update - tag as converged and exit
-      if(vessel_type.eq.'rigid')then
-        ERR=0.0_dp
-        CONVERGED=.TRUE.
-      else
 !Update vessel radii based on predicted pressures and then update resistance through tree
         call calc_press_area(grav_type,grav_vect,KOUNT,KOUNT2,depvar_at_node,prq_solution,&
            mesh_dof,ptrans,beta,Go_artery,Ptm_max,pleural_density,vessel_type)
         call calculate_resistance(viscosity,density)
 !Put the ladder stuff here --> See solve11.f
 
-         ERR=ERR/MatrixSize !sum of error divided by no of unknown depvar
-         if(ERR.LE.1.d-6.AND.(KOUNT.NE.1))then
-           CONVERGED=.TRUE.
-            print *,"Convergence achieved after",KOUNT,"iterations",ERR
-         else !if error not converged
-            if(ERR.GE.MIN_ERR) then
-              N_MIN_ERR=N_MIN_ERR+1
-            else
-              MIN_ERR=ERR
-            endif
-            print *,"Not converged, error =",ERR
-         endif !ERR not converged
-      endif!vessel type
-    enddo !notconverged
+
 
 !need to write solution to element/nodal fields for export
     call map_solution_to_mesh(prq_solution,depvar_at_elem,depvar_at_node,mesh_dof)
@@ -271,8 +167,6 @@ KOUNT2=KOUNT2+1
     deallocate (SparseRow, STAT = AllocateStatus)
     deallocate (RHS, STAT = AllocateStatus)
     deallocate (update_resistance_entries, STAT=AllocateStatus)
-    CONVERGED=.FALSE.
-ENDDO
 
     deallocate (mesh_from_depvar, STAT = AllocateStatus)
     deallocate (depvar_at_elem, STAT = AllocateStatus)
@@ -889,7 +783,7 @@ subroutine calc_press_area(grav_type,grav_vect,KOUNT,KOUNT2,depvar_at_node,prq_s
       do  ne=1,num_elems
         elem_field(ne_radius_in0,ne)=elem_field(ne_radius_in,ne)
         elem_field(ne_radius_out0,ne)=elem_field(ne_radius_out,ne)
-        write(*,*) ne,elem_field(ne_radius_out0,ne)
+        write(*,*) ne,elem_field(ne_radius_out0,ne),elem_field(ne_radius,ne)
       enddo !elems
     endif
 

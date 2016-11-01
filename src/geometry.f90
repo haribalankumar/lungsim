@@ -697,6 +697,7 @@ contains
                  if(index(ctemp1, "value")> 0) then
                     call get_final_real(ctemp1,radius)
                     elem_field(ne_radius_in,ne)=constrict*radius
+                    elem_field(ne_radius_out,ne)=constrict*radius
                  endif
                endif
              endif
