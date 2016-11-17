@@ -44,7 +44,10 @@ module arrays
   type, EXTENDS (two_parameter) :: three_parameter
     real(dp) :: admit_P3=1.0_dp
   end type three_parameter
-  type,EXTENDS (three_parameter) :: all_admit_bcs
+  type, EXTENDS (three_parameter) :: four_parameter
+    real(dp) :: admit_P4=1.0_dp
+  end type four_parameter
+  type,EXTENDS (four_parameter) :: all_admit_bcs
   end type all_admit_bcs
 
 ! temporary, for debugging:

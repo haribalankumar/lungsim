@@ -32,6 +32,7 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
     bc_params)
 !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_SOLVE_WAVE_PROPAGATION: SOLVE_WAVE_PROPAGATION
   use indices
+  use filenames, only:AIRWAY_EXNODEFILE,AIRWAY_EXELEMFILE,AIRWAY_ELEMFILE
   use other_consts, only: MAX_STRING_LEN
   use arrays, only: num_elems,num_nodes,all_admit_bcs,elem_field
   use diagnostics, only: enter_exit
@@ -47,6 +48,9 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
 
   type(all_admit_bcs) :: bc
   !local variables
+  integer,parameter :: fid = 10
+  integer,parameter :: fid2 = 20
+  integer,parameter :: fid3 = 30
   integer :: nf,tt,time_step
   real(dp) :: omega
   complex(dp), allocatable :: eff_admit(:,:)
@@ -54,11 +58,13 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
   complex(dp), allocatable :: reflect(:,:)
   complex(dp), allocatable :: prop_const(:,:)
   complex(dp), allocatable :: p_factor(:,:)
-  complex(dp) :: pressure(n_time,no_freq+1),flow(n_time,no_freq+1),inlet_pressure(n_time,no_freq+1),&
-  inlet_flow(n_time,no_freq+1)
-  real(dp) :: flow_phase,press_phase,press_phase2
-  real(dp) :: flow_amp,press_amp,press_amp2,harmonic_scale
+  real(dp) :: pressure(n_time,no_freq+1),flow(n_time),inlet_pressure(n_time,no_freq+1),&
+  inlet_flow(n_time,no_freq+1),incident_flow(n_time,no_freq+1),reflected_flow(n_time,no_freq+1)&
+  ,velocity(n_time)
+  real(dp) :: flow_phase,press_phase,press_phase2,E,h,h_bar,C
+  real(dp) :: flow_amp,press_amp,press_amp2,harmonic_scale,time
   integer :: AllocateStatus
+  integer :: point1,point2
 
   character(len=60) :: sub_name
 
@@ -72,8 +78,14 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
     elseif(bc_params(1)==2.0_dp)then
       bc%bc_type='three_unit_wk'
       bc%three_parameter%admit_P1=bc_params(2)
-      bc%three_parameter%admit_P1=bc_params(3)
-      bc%three_parameter%admit_P1=bc_params(4)
+      bc%three_parameter%admit_P2=bc_params(3)
+      bc%three_parameter%admit_P3=bc_params(4)
+    elseif(bc_params(1)==4.0_dp)then
+      bc%bc_type='two_wk_plus'
+      bc%four_parameter%admit_P1=bc_params(2)
+      bc%four_parameter%admit_P2=bc_params(3)
+      bc%four_parameter%admit_P3=bc_params(4)
+      bc%four_parameter%admit_P4=bc_params(5)
     else
     !NOT YET IMPLEMENTED - CALL AN ERROR
     endif
@@ -110,6 +122,8 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
   flow=0.0_dp
   inlet_pressure=0.0_dp
   inlet_flow=0.0_dp
+  incident_flow=0.0_dp
+  reflected_flow=0.0_dp
 
 
       !write(*,*) 'qfactor'
@@ -136,11 +150,15 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
 
 
    ! enddo
+   open(fid, file = AIRWAY_EXNODEFILE,status='old',action='write',position="append")
+   write(fid,fmt=*) 'radius',bc%four_parameter%admit_P4
         write(*,*) 'reflect_coeff'
     do nf=1,no_freq
      omega=nf*2*PI*harmonic_scale
-        write(*,*) abs(reflect(nf,1)),',',atan2(imagpart(reflect(nf,1)),&
-       realpart(reflect(nf,1))),','
+        write(*,*) abs(reflect(nf,1)),atan2(imagpart(reflect(nf,1)),&
+       realpart(reflect(nf,1)))
+       write(fid,fmt=*) abs(reflect(nf,1)),atan2(imagpart(reflect(nf,1)),&
+       realpart(reflect(nf,1)))
     enddo
 
     write(*,*) 'prop_const'
@@ -152,7 +170,7 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
        !realpart(exp(-2.0_dp*prop_const(nf,9)*elem_field(ne_length,10)))),','
     enddo
 
-
+    close(fid)
   !  write(*,*) 'inlet_ref_coeff'
   !  do nf=1,no_freq
   !   omega=nf*2*PI*harmonic_scale
@@ -169,15 +187,68 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
    ! enddo
 
 
-
+    open(fid2, file = AIRWAY_EXELEMFILE,status='old',action='write',position="append")
+       write(fid2,fmt=*) 'radius',bc%four_parameter%admit_P4
+    time=0.0_dp
     do tt=1,time_step
-      inlet_flow(tt,no_freq+1)=sum(inlet_flow(tt,1:no_freq))
-      inlet_pressure(tt,no_freq+1)=sum(inlet_pressure(tt,1:no_freq))
-      pressure(tt,no_freq+1)=sum(pressure(tt,1:no_freq))
-      flow(tt,no_freq+1)=sum(flow(tt,1:no_freq))
+      do nf=1,no_freq
+      omega=nf*2*PI*harmonic_scale
+        inlet_flow(tt,nf)=a(nf)*cos(omega*time+b(nf))
+        incident_flow(tt,nf)=a(nf)*exp(-10.0_dp*realpart(prop_const(nf,1)))&
+          *COS(omega*time+b(nf)-10.0_dp*imagpart(prop_const(nf,1)))
+        reflected_flow(tt,nf)=a(nf)*abs(reflect(nf,1))*exp((10.0_dp-2*100.0_dp)*realpart(prop_const(nf,1)))&
+          * COS(omega*time+b(nf)+(10.0_dp-2*100.0_dp)*imagpart(prop_const(nf,1))+atan2(imagpart(reflect(nf,1)),&
+         realpart(reflect(nf,1))))
+        pressure(tt,nf)=a(nf)*1000.0_dp/60.0_dp*abs(reflect(nf,1))&
+          *COS(omega*time+b(nf)+atan2(imagpart(reflect(nf,1)),realpart(reflect(nf,1))))
+        !=$A3*PArameters!$B27*EXP(($G$31-2*$I$31)*$A14)*COS(2*PI()*$E32*F$2+PArameters!$C27+$G$31*$B14-2*$I$31*$B14+$B3)
+      enddo
+      time=time+0.01_dp
     enddo
+    time=0.0_dp
+    do tt=1,time_step
+      inlet_flow(tt,no_freq+1)=sum(inlet_flow(tt,1:no_freq))+a0
+      incident_flow(tt,no_freq+1)=sum(incident_flow(tt,1:no_freq))
+      reflected_flow(tt,no_freq+1)=-1.0_dp*sum(reflected_flow(tt,1:no_freq))
+      pressure(tt,no_freq+1)=80.0_dp*133.0_dp-sum(pressure(tt,1:no_freq))
+      flow(tt)=incident_flow(tt,no_freq+1)+reflected_flow(tt,no_freq+1)+a0
+      E=1.5e6_dp
+      h_bar=0.1_dp
+      h=h_bar*elem_field(ne_radius_out0,1)
+      C=3.0_dp*PI*elem_field(ne_radius_out0,1)**3/(2.0_dp*h*E)
+      velocity(tt)=(flow(tt)*1000.0_dp/60.0_dp)/(pi*elem_field(ne_radius_out0,1)**2&
+        +C*(pressure(tt,no_freq+1)-80.0_dp*133.0_dp))/10.0_dp !cm/s
+      write(fid2,fmt=*) time,pressure(tt,no_freq+1),flow(tt),velocity(tt)
+      time=time+0.01_dp
+    enddo
+    close(fid2)
 
+   open(fid3, file = AIRWAY_ELEMFILE,status='old',action='write',position="append")
+   write(fid3,fmt=*) 'radius',bc%four_parameter%admit_P4
+   write(fid3,fmt=*) 's/d',maxval(velocity(1:time_step))/minval(velocity(1:time_step))
+   write(fid3,fmt=*) 'RI',(maxval(velocity(1:time_step))-minval(velocity(1:time_step)))/maxval(velocity(1:time_step))
+   write(fid3,fmt=*) 'PI',(maxval(velocity(1:time_step))-minval(velocity(1:time_step)))*time_step/sum(velocity(1:time_step))
+   point1=1
+   do while(velocity(point1+1).gt.velocity(point1).and.point1.lt.time_step)
+     point1=point1+1
+   enddo
+   do while(velocity(point1+1).lt.velocity(point1).and.point1.lt.time_step)
+        point1=point1+1
+   enddo
+   !point1=minloc(velocity(floor(dble(time_step/4)):ceiling(dble(time_step/2))),1)+floor(dble(time_step/4))
+   point2=maxloc(velocity(floor(dble(time_step/3)):ceiling(dble(3*time_step/4))),1)+floor(dble(time_step/3))
+   write(*,*) point1,point2
+   if(point1.lt.point2)then
+     write(fid3,fmt=*) 'notch_height',velocity(point1)&
+       -minval(velocity(floor(dble(time_step/4)):ceiling(dble(time_step/2))))
+     write(fid3,fmt=*) 'notch_ratio',(maxval(velocity(floor(dble(time_step/3)):ceiling(dble(3*time_step/4))))&
+       -minval(velocity(floor(dble(time_step/4)):ceiling(dble(time_step/2)))))&
+        /(maxval(velocity(1:time_step))-minval(velocity(1:time_step)))
+    else
+    write(fid3,fmt=*) point1,point2
+   endif
 
+    close(fid3)
 
     !do tt=1,time_step
    ! write(*,*) 'inlet_pressure'
@@ -217,7 +288,7 @@ subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_co
   complex(dp), intent(inout) :: prop_const(1:no_freq,num_elems)
     real(dp), intent(in) :: harmonic_scale
   !local variables
-  real(dp) :: L,C,R, G,omega
+  real(dp) :: L,C,R, G,omega,gen_factor
   real(dp) :: E,h_bar,h,density,viscosity !should be global - maybe express as alpha (i.e. pre multiply)
   integer :: ne,nf
   integer :: exit_status=0
@@ -225,7 +296,8 @@ subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_co
 
   sub_name = 'characteristic_admittance'
   call enter_exit(sub_name,1)
-  E=15.0e5_dp !Pa
+  E=1.5e6_dp !Pa !default
+  !E=2.0e6_dp
   h_bar=0.1_dp!this is a fraction of the radius so is unitless
   density=0.10500e-02_dp !g/mm^3
   viscosity=0.3500e-02_dp !pa.s=kg/m.s =.3e-2 = equivalent in g/(mm.s)
@@ -270,8 +342,10 @@ subroutine characteristic_admittance(admittance_model,no_freq,char_admit,prop_co
       omega=nf*2*PI*harmonic_scale
       char_admit(nf,ne)=sqrt(G+cmplx(0.0_dp,1.0_dp,8)*omega*C)/sqrt(R+cmplx(0.0_dp,1.0_dp,8)*omega*L)
       prop_const(nf,ne)=sqrt((G+cmplx(0.0_dp,1.0_dp,8)*omega*C)*(R+cmplx(0.0_dp,1.0_dp,8)*omega*L))
-     if(ne.ge.3)then
-        char_admit(nf,ne)=char_admit(nf,ne)*1000.0_dp
+     if(ne.eq.3)then
+        char_admit(nf,ne)=char_admit(nf,ne)*50.0_dp !40 radials in the placenta
+     elseif(ne.eq.2)then
+        !char_admit(nf,ne)=char_admit(nf,ne)*20.0_dp
      endif
       !!write(*,*) 'char_admit',ne,nf,  char_admit(nf,ne)
       !!write(*,*) 'prop_const', ne,nf, prop_const(nf,ne)
@@ -298,8 +372,9 @@ subroutine terminal_admittance(no_freq,eff_admit,char_admit,bc,harmonic_scale)
   real(dp), intent(in) :: harmonic_scale
   !local variables
   integer :: nf,ne,nunit
-  real(dp) :: omega,R1,R2,C
-  complex(dp) :: wolm
+  real(dp) :: omega,R1,R2,C,length,radius,C_term,E,h_bar,density
+  real(dp) ::  viscosity,h,L_term,R_term,vein_res
+  complex(dp) :: term_admit
 
   character(len=60) :: sub_name
   sub_name = 'terminal_admittance'
@@ -327,6 +402,37 @@ subroutine terminal_admittance(no_freq,eff_admit,char_admit,bc,harmonic_scale)
           ne=units(nunit)
           !temporarily store in eff_admit, to be added to the char admit
           eff_admit(nf,ne)=(1+cmplx(0,1)*omega*R2*C)/(R1+R2+cmplx(0,1)*omega*R1*R2*C)
+        enddo
+      enddo
+     elseif(bc%bc_type.eq.'two_wk_plus')then
+      E=1.5e6_dp !Pa
+      h_bar=0.1_dp!this is a fraction of the radius so is unitless
+      density=0.10500e-02_dp !g/mm^3
+      viscosity=0.3500e-02_dp !pa.s=kg/m.s =.3e-2 = equivalent in g/(mm.s)
+      vein_res=0.45_dp
+      R1=bc%four_parameter%admit_P1
+      C=bc%four_parameter%admit_P2
+      length=bc%four_parameter%admit_P3
+      radius=bc%four_parameter%admit_P4
+      do nf=1,no_freq !step through frequencies
+        omega=nf*2*PI*harmonic_scale
+        do nunit=1,num_units
+          ne=units(nunit)
+         !temporarily store in eff_admit, to be added to the char admit
+         !ADMITTANCE DUE TO THE TERMINAL LOAD
+          eff_admit(nf,ne)=(1.0_dp+cmplx(0,1.0_dp)*omega*R1*C)/R1
+          ! A SECOND ADMITTANCE IN PARALLEL REPRESENTING SHUNTS
+          h=h_bar*radius
+          C_term=3.0_dp*PI*radius**3/(2.0_dp*h*E)!
+          L_term=9.0_dp*density&
+             /(4.0_dp*PI*radius**2)!per unit length
+          R_term=81.0_dp*viscosity/ &
+             (8.0_dp*PI*radius**4) !laminar resistance per unit length
+        !G=0.0_dp
+          term_admit=sqrt(cmplx(0.0_dp,1.0_dp,8)*omega*C_term)&
+            /sqrt(R_term+cmplx(0.0_dp,1.0_dp,8)*omega*L_term)*50.0_dp*1.0_dp
+                        term_admit=term_admit/(1+term_admit*vein_res)
+          eff_admit(nf,ne)=term_admit!+eff_admit(nf,ne)
         enddo
       enddo
 
@@ -376,7 +482,7 @@ end subroutine terminal_admittance
             (1&
             +reflect(nf,ne)*exp(-2.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne)))!double checked
          else!a terminal
-           daughter_admit=char_admit(nf,ne)
+           daughter_admit=eff_admit(nf,ne)
            !eff_admit(nf,ne) !temp just make it the same
            !write(*,*) char_admit(nf,ne),nf,ne
            reflect(nf,ne)=(char_admit(nf,ne)-daughter_admit)/&

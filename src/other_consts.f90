@@ -16,7 +16,7 @@ module other_consts
   integer, parameter :: MAX_FILENAME_LEN = 255, MAX_STRING_LEN = 100, MAX_SUBNAME_LEN = 60
   integer :: num_symm_gen
 
-  real(dp), parameter :: PI = 3.14159265358979_dp
+  real(dp), parameter :: PI = 4.0_dp * atan(1.0_dp)
   real(dp) :: Palv,sheet_h0,K_cap,F_cap,F_sheet,sigma_cap,mu_c,alpha_c,area_scale
   real(dp) :: F_rec,sigma_rec,L_c,Plb_c,Pub_c,Pub_a_v,total_cap_area,L_art_terminal
   real(dp) :: H0,L_scale,L_vein_terminal,Ptm_max,R_art_terminal,R_vein_terminal
