@@ -151,7 +151,7 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
 
    ! enddo
    open(fid, file = AIRWAY_EXNODEFILE,status='old',action='write',position="append")
-   write(fid,fmt=*) 'radius',bc%four_parameter%admit_P4
+   write(fid,fmt=*) 'parameter',elem_field(ne_radius_out0,2)
         write(*,*) 'reflect_coeff'
     do nf=1,no_freq
      omega=nf*2*PI*harmonic_scale
@@ -188,7 +188,7 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
 
 
     open(fid2, file = AIRWAY_EXELEMFILE,status='old',action='write',position="append")
-       write(fid2,fmt=*) 'radius',bc%four_parameter%admit_P4
+       write(fid2,fmt=*) 'parameter',elem_field(ne_radius_out0,2)
     time=0.0_dp
     do tt=1,time_step
       do nf=1,no_freq
@@ -224,28 +224,32 @@ subroutine evaluate_wave_propagation(n_time,a0,no_freq,a,b,n_bcparams,&
     close(fid2)
 
    open(fid3, file = AIRWAY_ELEMFILE,status='old',action='write',position="append")
-   write(fid3,fmt=*) 'radius',bc%four_parameter%admit_P4
+   write(fid3,fmt=*) 'parameter',elem_field(ne_radius_out0,2)
    write(fid3,fmt=*) 's/d',maxval(velocity(1:time_step))/minval(velocity(1:time_step))
    write(fid3,fmt=*) 'RI',(maxval(velocity(1:time_step))-minval(velocity(1:time_step)))/maxval(velocity(1:time_step))
    write(fid3,fmt=*) 'PI',(maxval(velocity(1:time_step))-minval(velocity(1:time_step)))*time_step/sum(velocity(1:time_step))
    point1=1
-   do while(velocity(point1+1).gt.velocity(point1).and.point1.lt.time_step)
+   point2=1
+   do while(velocity(point1+1).gt.velocity(point1).and.point1.lt.time_step-1)
      point1=point1+1
    enddo
-   do while(velocity(point1+1).lt.velocity(point1).and.point1.lt.time_step)
+   do while(velocity(point1+1).lt.velocity(point1).and.point1.lt.time_step-1)
         point1=point1+1
    enddo
+   point2=point1
+   do while(velocity(point2+1).gt.velocity(point2).and.point2.lt.time_step-1)
+        point2=point2+1
+   enddo
    !point1=minloc(velocity(floor(dble(time_step/4)):ceiling(dble(time_step/2))),1)+floor(dble(time_step/4))
-   point2=maxloc(velocity(floor(dble(time_step/3)):ceiling(dble(3*time_step/4))),1)+floor(dble(time_step/3))
-   write(*,*) point1,point2
+   !point2=maxloc(velocity(floor(dble(time_step/3)):ceiling(dble(3*time_step/4))),1)+floor(dble(time_step/3))
+   !write(*,*) point1,point2
    if(point1.lt.point2)then
-     write(fid3,fmt=*) 'notch_height',velocity(point1)&
-       -minval(velocity(floor(dble(time_step/4)):ceiling(dble(time_step/2))))
-     write(fid3,fmt=*) 'notch_ratio',(maxval(velocity(floor(dble(time_step/3)):ceiling(dble(3*time_step/4))))&
-       -minval(velocity(floor(dble(time_step/4)):ceiling(dble(time_step/2)))))&
+     write(fid3,fmt=*) 'notch_height',velocity(point2)-velocity(point1)
+     write(fid3,fmt=*) 'notch_ratio',(velocity(point2)-velocity(point1))&
         /(maxval(velocity(1:time_step))-minval(velocity(1:time_step)))
     else
-    write(fid3,fmt=*) point1,point2
+    write(fid3,fmt=*) 'notch_height', 0.0000000
+     write(fid3,fmt=*) 'notch_ratio',0.0000000
    endif
 
     close(fid3)
@@ -432,7 +436,7 @@ subroutine terminal_admittance(no_freq,eff_admit,char_admit,bc,harmonic_scale)
           term_admit=sqrt(cmplx(0.0_dp,1.0_dp,8)*omega*C_term)&
             /sqrt(R_term+cmplx(0.0_dp,1.0_dp,8)*omega*L_term)*50.0_dp*1.0_dp
                         term_admit=term_admit/(1+term_admit*vein_res)
-          eff_admit(nf,ne)=term_admit!+eff_admit(nf,ne)
+          eff_admit(nf,ne)=term_admit+eff_admit(nf,ne)
         enddo
       enddo
 
