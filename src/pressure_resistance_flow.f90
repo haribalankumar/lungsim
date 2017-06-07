@@ -783,10 +783,7 @@ subroutine calc_press_area(grav_type,grav_vect,KOUNT,KOUNT2,depvar_at_node,prq_s
       do  ne=1,num_elems
         elem_field(ne_radius_in0,ne)=elem_field(ne_radius_in,ne)
         elem_field(ne_radius_out0,ne)=elem_field(ne_radius_out,ne)
-<<<<<<< HEAD
         write(*,*) ne,elem_field(ne_radius_out0,ne),elem_field(ne_radius,ne)
-=======
->>>>>>> prime/develop
       enddo !elems
     endif
 
@@ -805,7 +802,6 @@ subroutine calc_press_area(grav_type,grav_vect,KOUNT,KOUNT2,depvar_at_node,prq_s
       Pblood=prq_solution(ny,1)/1000.0d0 ! Pa->kPa
       Ptm=Pblood+Ppl     ! kPa
       R0=elem_field(ne_radius_in0,ne)
-<<<<<<< HEAD
       if(vessel_type.eq.'linear_compliance')then
         if(Ptm.LT.Ptm_max.and.Go_artery.gt.0.0_dp)THEN
           if(nn.eq.1) elem_field(ne_radius_in,ne)=R0*((Ptm/Go_artery)+1.d0)**(1.d0/beta)
@@ -829,20 +825,6 @@ subroutine calc_press_area(grav_type,grav_vect,KOUNT,KOUNT2,depvar_at_node,prq_s
           if(nn.eq.1) elem_field(ne_radius_in,ne)=R0
           if(nn.eq.2) elem_field(ne_radius_out,ne)=R0
        endif
-=======
-    !...ARC: giving a maximum distension
-      if(Ptm.LT.Ptm_max.and.Go_artery.gt.0.0_dp)THEN
-        if(nn.eq.1) elem_field(ne_radius_in,ne)=R0*((Ptm/Go_artery)+1.d0)**(1.d0/beta)
-        if(nn.eq.2) elem_field(ne_radius_out,ne)=R0*((Ptm/Go_artery)+1.d0)**(1.d0/beta)
-      elseif(Ptm.lt.0.0_dp.or.Go_artery.eq.0.0_dp)THEN
-        if(Ptm.lt.0)write(*,*) 'Transmural pressure < zero',ne,Ptm,Pblood,Ppl
-        if(nn.eq.1) elem_field(ne_radius_in,ne)=R0
-        if(nn.eq.2) elem_field(ne_radius_out,ne)=R0
-      else!ptm>ptmmax
-        if(nn.eq.1) elem_field(ne_radius_in,ne)=R0*((Ptm_max/Go_artery)+1.d0)**(1.d0/beta)
-        if(nn.eq.2) elem_field(ne_radius_out,ne)=R0*((Ptm_max/Go_artery)+1.d0)**(1.d0/beta)
-      endif
->>>>>>> prime/develop
       enddo!nn
     enddo!ne
 
