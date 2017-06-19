@@ -22,6 +22,7 @@ set(INTERFACE_SRCS
   ../interface/indices.i
   ../interface/pressure_resistance_flow.i
   ../interface/ventilation.i
+  ../interface/wave_transmission.i
 )
 
 include_directories(${PYTHON_INCLUDE_DIRS} ${NUMPY_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/../c/src)
