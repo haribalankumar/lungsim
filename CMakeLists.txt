@@ -56,6 +56,7 @@ set(LIB_SRCS
   src/pressure_resistance_flow.f90
   src/solve.f90
   src/ventilation.f90
+  src/wave_transmission.f90
 )
 
 # Create an object library so we can use the objects in two different libraries
