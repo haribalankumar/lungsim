@@ -12,6 +12,7 @@ set(C_FORTRAN_LIB_SRCS
     src/pressure_resistance_flow.f90
     src/utils.f90
     src/ventilation.f90
+    src/wave_transmission.f90
 )
 set(C_C_LIB_SRCS
     src/arrays.c
@@ -24,6 +25,7 @@ set(C_C_LIB_SRCS
     src/pressure_resistance_flow.c
     src/utils.c
     src/ventilation.c
+    src/wave_transmission.c
 )
 
 set(C_LIB_HDRS
@@ -38,6 +40,7 @@ set(C_LIB_HDRS
   src/pressure_resistance_flow.h
   src/utils.h
   src/ventilation.h
+  src/wave_transmission.h
 )
 
 add_library(aether_c_fortran STATIC ${C_FORTRAN_LIB_SRCS} $<TARGET_OBJECTS:aether_obj>)
