@@ -36,18 +36,18 @@ module arrays
 
   type capillary_bf_parameters
     integer :: num_symm_gen=9 !no units
-    real(dp) :: total_cap_area=0.63000e+02_dp !m
+    real(dp) :: total_cap_area=0.63000e02_dp !m
     real(dp) :: Palv=0.0_dp!Pa
     real(dp) :: H0=0.35000e-05_dp !m
-    real(dp) :: K_cap=0.12000e+02_dp
-    real(dp) :: F_cap=0.18000e+01_dp
-    real(dp) :: F_sheet=0.10400e+00_dp
-    real(dp) :: sigma_cap=0.43637e+03_dp !Pa
+    real(dp) :: K_cap=0.12000e02_dp
+    real(dp) :: F_cap=0.18000e01_dp
+    real(dp) :: F_sheet=0.10400e00_dp
+    real(dp) :: sigma_cap=0.43637e03_dp !Pa
     real(dp) :: mu_c=0.19200e-02_dp !Pa.s
     real(dp) :: alpha_a=2.33e-08_dp !/Pa
     real(dp) :: alpha_v=2.33e-08_dp !/Pa
-    real(dp) :: F_rec=0.64630e+00_dp
-    real(dp) :: sigma_rec=0.22300e+04_dp
+    real(dp) :: F_rec=0.64630e00_dp
+    real(dp) :: sigma_rec=0.22300e04_dp
     real(dp) :: L_c=0.11880e-02_dp !m
     real(dp) :: Plb_c=0.0_dp !Pa
     real(dp) :: Pub_c=3138.24_dp !Pa
@@ -58,13 +58,30 @@ module arrays
     real(dp) :: R_vein_terminal=0.90000e-05!m
   end type capillary_bf_parameters
 
+  type admittance_bc
+    character (len=20) :: bc_type
+  end type admittance_bc
+  type, EXTENDS (admittance_bc) :: two_parameter
+     real(dp) :: admit_P1=1.0_dp
+     real(dp) :: admit_P2=1.0_dp
+  end type two_parameter
+  type, EXTENDS (two_parameter) :: three_parameter
+    real(dp) :: admit_P3=1.0_dp
+  end type three_parameter
+  type, EXTENDS (three_parameter) :: four_parameter
+    real(dp) :: admit_P4=1.0_dp
+  end type four_parameter
+  type,EXTENDS (four_parameter) :: all_admit_bcs
+  end type all_admit_bcs
+
 ! temporary, for debugging:
   real(dp) :: unit_before
 
   private
   public set_node_field_value, elem_field, num_elems, elem_nodes, node_xyz, nodes, elems, &
     num_nodes, units, num_units, unit_field, node_field, dp, elem_cnct, elem_ordrs, elem_direction, &
-    elems_at_node, elem_symmetry, expansile, elem_units_below, maxgen,capillary_bf_parameters
+    elems_at_node, elem_symmetry, expansile, elem_units_below, maxgen,capillary_bf_parameters,&
+    all_admit_bcs
 
 contains
   subroutine set_node_field_value(row, col, value)
