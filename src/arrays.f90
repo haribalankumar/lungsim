@@ -58,10 +58,11 @@ module arrays
     real(dp) :: R_vein_terminal=0.90000e-05!m
   end type capillary_bf_parameters
 
-  type admittance_bc
+  type admittance_param
+    character (len=20) :: admittance_type
     character (len=20) :: bc_type
-  end type admittance_bc
-  type, EXTENDS (admittance_bc) :: two_parameter
+  end type admittance_param
+  type, EXTENDS (admittance_param) :: two_parameter
      real(dp) :: admit_P1=1.0_dp
      real(dp) :: admit_P2=1.0_dp
   end type two_parameter
@@ -71,8 +72,22 @@ module arrays
   type, EXTENDS (three_parameter) :: four_parameter
     real(dp) :: admit_P4=1.0_dp
   end type four_parameter
-  type,EXTENDS (four_parameter) :: all_admit_bcs
-  end type all_admit_bcs
+  type,EXTENDS (four_parameter) :: all_admit_param
+  end type all_admit_param
+
+  type elasticity_vessels
+    character(len=20) ::vessel_type
+  end type elasticity_vessels
+  type, EXTENDS(elasticity_vessels) :: elasticity_param
+    real(dp) :: elasticity_parameters(3)=0.0_dp
+  end type elasticity_param
+
+  type fluid_properties
+    real(dp) :: blood_viscosity=0.33600e-02_dp !Pa.s
+    real(dp) :: blood_density=0.10500e-02_dp !kg/cm3
+    real(dp) :: air_viscosity
+    real(dp) :: air_density
+  end type fluid_properties
 
 ! temporary, for debugging:
   real(dp) :: unit_before
@@ -81,7 +96,7 @@ module arrays
   public set_node_field_value, elem_field, num_elems, elem_nodes, node_xyz, nodes, elems, &
     num_nodes, units, num_units, unit_field, node_field, dp, elem_cnct, elem_ordrs, elem_direction, &
     elems_at_node, elem_symmetry, expansile, elem_units_below, maxgen,capillary_bf_parameters,&
-    all_admit_bcs
+    all_admit_param,fluid_properties,elasticity_param
 
 contains
   subroutine set_node_field_value(row, col, value)
