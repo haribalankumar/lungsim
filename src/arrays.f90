@@ -44,8 +44,8 @@ module arrays
     real(dp) :: F_sheet=0.10400e00_dp
     real(dp) :: sigma_cap=0.43637e03_dp !Pa
     real(dp) :: mu_c=0.19200e-02_dp !Pa.s
-    real(dp) :: alpha_a=2.33e-08_dp !/Pa
-    real(dp) :: alpha_v=2.33e-08_dp !/Pa
+    real(dp) :: alpha_a=2.33e-08_dp !m/Pa
+    real(dp) :: alpha_v=2.33e-08_dp !m/Pa
     real(dp) :: F_rec=0.64630e00_dp
     real(dp) :: sigma_rec=0.22300e04_dp
     real(dp) :: L_c=0.11880e-02_dp !m

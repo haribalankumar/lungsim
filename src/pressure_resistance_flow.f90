@@ -19,7 +19,7 @@ module pressure_resistance_flow
 
   !Interfaces
   private
-  public evaluate_prq
+  public evaluate_prq,calculate_ppl
 contains
 !###################################################################################
 !
@@ -291,7 +291,7 @@ gamma = 0.327_dp !=1.85/(4*sqrt(2))
                 Lout=elem_field(ne_length,ne1)
                  call cap_flow_ladder(ne,LPM_R,Lin,Lout,P1,P2,&
                         Ppl,Q01,Rin,Rout,x_cap,y_cap,z_cap,&
-                        .FALSE.)
+                        .TRUE.)
                  elem_field(ne_resist,ne)=LPM_R
               endif
            enddo
