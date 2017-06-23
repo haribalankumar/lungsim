@@ -208,8 +208,10 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
    tree_direction='diverging'
    call tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmonic_scale,&
        min_art,max_art,tree_direction)
-
    endif
+   !calculate pressure drop through arterial tree (note to do veins too need to implement this concept thro' whole ladder model)
+   !Also need to implement in reverse for veins
+   call pressure_factor(no_freq,p_factor,reflect,prop_const,harmonic_scale,min_art,max_art)
 
   !!DEALLOCATE MEMORY
   deallocate (eff_admit, STAT = AllocateStatus)
@@ -594,4 +596,49 @@ subroutine capillary_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,
    enddo!ne
 
 end subroutine capillary_admittance
+!
+!################################################
+!
+!*pressure_factor:* Calculates change in pressure through tree
+  subroutine pressure_factor(no_freq,p_factor,reflect,prop_const,harmonic_scale,ne_min,ne_max)
+    use indices
+    use arrays,only: dp,num_elems,elem_cnct,elem_field
+    use diagnostics, only: enter_exit
+    integer, intent(in) :: no_freq
+    complex(dp), intent(inout) :: p_factor(1:no_freq,num_elems)
+    complex(dp), intent(inout) :: reflect(1:no_freq,num_elems)
+    complex(dp), intent(in) :: prop_const(1:no_freq,num_elems)
+    real(dp), intent(in) :: harmonic_scale
+    integer, intent(in) :: ne_min,ne_max
+
+
+
+    character(len=60) :: sub_name
+!local variables
+    integer :: ne, nf,ne_up
+    real(dp) :: omega
+
+    sub_name = 'pressure_factor'
+    call enter_exit(sub_name,1)
+    do nf=1,no_freq
+      omega=nf*2*PI*harmonic_scale
+      do ne=ne_min,ne_max
+        !look for upstream element
+        if(elem_cnct(-1,0,ne).eq.0)then !no upstream elements, inlet, ignore
+        write(*,*) 'element inlet', ne,ne_min,ne_max
+        ne_up=ne_min
+          p_factor(nf,ne)=(1.0_dp)!* &!assumes input admittance is the same as characteristic admittance for this vessel
+            !exp(-1.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne))!/&
+            !(1+reflect(nf,ne)*exp(-2.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne)))
+        else
+          ne_up=elem_cnct(-1,1,ne)
+          p_factor(nf,ne)=p_factor(nf,ne_up)*(1+reflect(nf,ne_up))* &
+            exp(-1.0_dp*omega*elem_field(ne_length,ne_up)/prop_const(nf,ne_up))/&
+            (1+reflect(nf,ne)*exp(-2.0_dp*omega*elem_field(ne_length,ne)/prop_const(nf,ne)))
+        endif!neup
+      enddo
+    enddo!nf
+
+    call enter_exit(sub_name,2)
+end subroutine pressure_factor
 end module wave_transmission
