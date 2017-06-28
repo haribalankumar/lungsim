@@ -32,7 +32,8 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
   n_model,model_definition)
 !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_EVALUATE_WAVE_TRANSMISSION: EVALUATE_WAVE_PROPAGATION
   use indices
-  use arrays, only: dp,all_admit_param,num_elems,elem_field,fluid_properties,elasticity_param
+  use arrays, only: dp,all_admit_param,num_elems,elem_field,fluid_properties,elasticity_param,num_units,&
+    units,node_xyz,elem_cnct,elem_nodes,node_field
   use diagnostics, only: enter_exit
 
   integer, intent(in) :: n_time
@@ -60,9 +61,14 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
   complex(dp), allocatable :: reflect(:,:)
   complex(dp), allocatable :: prop_const(:,:)
   complex(dp), allocatable :: p_factor(:,:)
-  integer :: min_art,max_art,min_ven,max_ven,min_cap,max_cap,ne
+  real(dp), allocatable :: forward_pressure(:)
+  real(dp), allocatable :: reflected_pressure(:)
+  real(dp), allocatable :: forward_flow(:)
+  real(dp), allocatable :: reflected_flow(:)
+  integer :: min_art,max_art,min_ven,max_ven,min_cap,max_cap,ne,nu,nt,nf,np
   character(len=30) :: tree_direction
-  integer :: AllocateStatus
+  real(dp) start_time,end_time,dt,time,omega
+  integer :: AllocateStatus,fid=10,fid2=20,fid3=30,fid4=40
   character(len=60) :: sub_name
 
   sub_name = 'evalulate_wave_transmission'
@@ -166,6 +172,15 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
   if (AllocateStatus /= 0) STOP "*** Not enough memory for prop_const array ***"
   allocate (p_factor(1:no_freq,num_elems), STAT = AllocateStatus)
   if (AllocateStatus /= 0) STOP "*** Not enough memory for p_factor array ***"
+  allocate (forward_pressure(n_time), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for p_factor array ***"
+  allocate (reflected_pressure(n_time), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for p_factor array ***"
+    allocate (forward_flow(n_time), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for p_factor array ***"
+  allocate (reflected_flow(n_time), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for p_factor array ***"
+
   !initialise admittance
   char_admit=0.0_dp
   eff_admit=0.0_dp
@@ -203,7 +218,7 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
        min_ven,max_ven,tree_direction)
    !cap admittance
    call capillary_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmonic_scale,&
-     min_cap,max_cap)
+     min_cap,max_cap,elast_param)
    !art admittance
    tree_direction='diverging'
    call tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmonic_scale,&
@@ -212,6 +227,67 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
    !calculate pressure drop through arterial tree (note to do veins too need to implement this concept thro' whole ladder model)
    !Also need to implement in reverse for veins
    call pressure_factor(no_freq,p_factor,reflect,prop_const,harmonic_scale,min_art,max_art)
+   !n_time,heartrate,a0,no_freq,a,b
+   start_time=0.0_dp
+   end_time=60.0_dp/heartrate
+   dt=(end_time-start_time)/n_time
+   time=start_time
+   write(*,*) start_time,end_time,dt
+   !consider first pressure and flow into the vessel (at x=0)
+   open(fid, file = 'incident_pressure.txt',action='write')
+   open(fid2, file = 'incident_flow.txt',action='write')
+   open(fid3, file = 'total_pressure.txt',action='write')
+   open(fid4, file = 'total_flow.txt',action='write')
+   do nu =1,num_units
+     ne=units(nu)
+     forward_pressure=0.0_dp
+     reflected_pressure=0.0_dp
+     forward_flow=0.0_dp
+     reflected_flow=0.0_dp
+     do nt=1,n_time
+       do nf=1,no_freq
+         omega=2*pi*nf*harmonic_scale
+         forward_pressure(nt)=forward_pressure(nt)+abs(p_factor(nf,ne))*a(nf)*cos(omega*time+b(nf)+&
+         atan2(imagpart(p_factor(nf,ne)),realpart(p_factor(nf,ne))))
+
+         reflected_pressure(nt)=reflected_pressure(nt)+abs(p_factor(nf,ne))*a(nf)*&
+         abs(reflect(nf,ne))*exp((-2*elem_field(ne_length,ne))*realpart(prop_const(nf,ne)))*&
+         cos(omega*time+b(nf)+&
+         atan2(imagpart(p_factor(nf,ne)),realpart(p_factor(nf,ne)))+&
+         (-2*elem_field(ne_length,ne))*imagpart(prop_const(nf,ne))+&
+         atan2(imagpart(reflect(nf,ne)),realpart(reflect(nf,ne))))
+
+         forward_flow(nt)=forward_flow(nt)+abs(char_admit(nf,ne))*abs(p_factor(nf,ne))*a(nf)*&
+         cos(omega*time+b(nf)+&
+         atan2(imagpart(p_factor(nf,ne)),realpart(p_factor(nf,ne)))+&
+         atan2(imagpart(char_admit(nf,ne)),realpart(char_admit(nf,ne))))
+
+         reflected_flow(nt)=reflected_flow(nt)+abs(char_admit(nf,ne))*abs(p_factor(nf,ne))*a(nf)*&
+         abs(reflect(nf,ne))*exp((-2*elem_field(ne_length,ne))*realpart(prop_const(nf,ne)))*&
+         cos(omega*time+b(nf)+&
+         atan2(imagpart(p_factor(nf,ne)),realpart(p_factor(nf,ne)))+&
+         (-2*elem_field(ne_length,ne))*imagpart(prop_const(nf,ne))+&
+         atan2(imagpart(reflect(nf,ne)),realpart(reflect(nf,ne)))+&
+         atan2(imagpart(char_admit(nf,ne)),realpart(char_admit(nf,ne))))
+
+       enddo
+       time=time+dt
+     enddo
+      np=elem_nodes(2,ne)
+   write(fid,fmt=*) ne, forward_pressure+node_field(nj_press,np)
+   write(fid2,fmt=*) ne, forward_flow+elem_field(ne_flow,ne)
+
+   write(fid3,fmt=*) ne, forward_pressure+node_field(nj_press,np)+reflected_pressure
+   write(fid4,fmt=*) ne, forward_flow+elem_field(ne_flow,ne)-reflected_flow
+   !   elem_field(ne_length,ne),abs(p_factor(1,ne))*a(1),&
+        !abs(reflect(1,ne)),abs(char_admit(1,ne)),node_xyz(2,ne)
+
+   enddo
+   close(fid)
+   close(fid2)
+   close(fid3)
+   close(fid4)
+
 
   !!DEALLOCATE MEMORY
   deallocate (eff_admit, STAT = AllocateStatus)
@@ -219,6 +295,10 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
   deallocate (reflect, STAT = AllocateStatus)
   deallocate (prop_const, STAT=AllocateStatus)
   deallocate (p_factor, STAT=AllocateStatus)
+  deallocate (forward_pressure, STAT=AllocateStatus)
+  deallocate (reflected_pressure, STAT=AllocateStatus)
+  deallocate (forward_flow, STAT=AllocateStatus)
+  deallocate (reflected_flow, STAT=AllocateStatus)
   call enter_exit(sub_name,2)
 end subroutine evaluate_wave_transmission
 !
@@ -403,13 +483,15 @@ subroutine characteristic_admittance(no_freq,char_admit,prop_const,harmonic_scal
       G=0.0_dp
     elseif(admit_param%admittance_type.eq.'duan_zamir')then
      do nf=1,no_freq !radius needs to  be multipled by 1000 to go to mm (units of rest of model)
-       omega=nf*2*PI*harmonic_scale
-       wavespeed=sqrt(1.0_dp/(2*density*elast_param%elasticity_parameters(1)))
-       wolmer=(elem_field(ne_radius_out0,ne))*sqrt(omega*density/viscosity)
+       omega=nf*2*PI*harmonic_scale!q/s
+       wavespeed=sqrt(1.0_dp/(2*density*elast_param%elasticity_parameters(1))) !mm/s
+       !wolmer=(elem_field(ne_radius_out0,ne))*sqrt(omega*density/viscosity)
+       wolmer=(elem_field(ne_radius_out,ne))*sqrt(omega*density/viscosity)
        call bessel_complex(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp),bessel0,bessel1)
-       f10=2*bessel1/(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp)*bessel0)
-       char_admit(nf,ne)=PI*(elem_field(ne_radius_out0,ne))**2/(density*wavespeed)*sqrt(1-f10)
-       prop_const(nf,ne)=wavespeed*sqrt(1-f10)
+       f10=2*bessel1/(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp)*bessel0)!no units
+       !char_admit(nf,ne)=PI*(elem_field(ne_radius_out0,ne))**2/(density*wavespeed)*sqrt(1-f10)!mm3/Pa.s
+       char_admit(nf,ne)=PI*(elem_field(ne_radius_out,ne))**2/(density*wavespeed)*sqrt(1-f10)
+       prop_const(nf,ne)=omega/(wavespeed*sqrt(1-f10))!1/mm
      enddo
     else !Unrecognised admittance model
       print *, "EXITING"
@@ -420,8 +502,8 @@ subroutine characteristic_admittance(no_freq,char_admit,prop_const,harmonic_scal
     else
       do nf=1,no_freq
         omega=nf*2*PI*harmonic_scale
-        char_admit(nf,ne)=sqrt(G+cmplx(0.0_dp,1.0_dp,8)*omega*C)/sqrt(R+cmplx(0.0_dp,1.0_dp,8)*omega*L)
-        prop_const(nf,ne)=sqrt((G+cmplx(0.0_dp,1.0_dp,8)*omega*C)*(R+cmplx(0.0_dp,1.0_dp,8)*omega*L))
+        char_admit(nf,ne)=sqrt(G+cmplx(0.0_dp,1.0_dp,8)*omega*C)/sqrt(R+cmplx(0.0_dp,1.0_dp,8)*omega*L)!mm3/Pa.s
+        prop_const(nf,ne)=sqrt((G+cmplx(0.0_dp,1.0_dp,8)*omega*C)*(R+cmplx(0.0_dp,1.0_dp,8)*omega*L))!1/mm
       enddo!nf
     endif
   enddo!ne
@@ -451,7 +533,7 @@ subroutine tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmo
 !local variables
   real(dp) :: invres,elem_res(num_elems),omega
   integer :: num2,ne,ne2,nf,num3,ne3
-    complex(dp) :: daughter_admit,sister_admit
+  complex(dp) :: daughter_admit,sister_admit,sister_current
 
     sub_name = 'tree_admittance'
     call enter_exit(sub_name,1)
@@ -497,11 +579,13 @@ subroutine tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmo
                ne3=elem_cnct(-1,num3,ne2)!for each upstream element of the daughter
                if(ne3.ne.ne)then
                   sister_admit=sister_admit+char_admit(nf,ne3)
+                  sister_current=exp(-1.0_dp*cmplx(0.0_dp,1.0_dp,8)*prop_const(nf,ne3)*elem_field(ne_length,ne3))/&
+                   exp(-1.0_dp*cmplx(0.0_dp,1.0_dp,8)*prop_const(nf,ne)**elem_field(ne_length,ne))
                endif
              enddo
           enddo
           if(elem_cnct(1,0,ne).gt.0)then !not a terminal
-            reflect(nf,ne)=(daughter_admit-char_admit(nf,ne)-sister_admit)/&
+            reflect(nf,ne)=(char_admit(nf,ne)+(2*sister_current-1)*sister_admit-daughter_admit)/&
               (char_admit(nf,ne)+daughter_admit+sister_admit)!ARC- to check
             eff_admit(nf,ne)=char_admit(nf,ne)*(1&
               -reflect(nf,ne)*exp(-2.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne)))/&
@@ -524,10 +608,10 @@ end subroutine tree_admittance
 !
 !*capillaryadmittance:* Calculates the total admittance of a tree
 subroutine capillary_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmonic_scale,&
-  min_elem,max_elem)
+  min_elem,max_elem,elast_param)
   use indices
   use arrays,only: dp,num_elems,elem_cnct,elem_field,capillary_bf_parameters,elem_nodes,&
-    node_field,node_xyz
+    node_field,node_xyz,elasticity_param
   use pressure_resistance_flow,only: calculate_ppl
   use capillaryflow, only:cap_flow_admit
   use diagnostics, only: enter_exit
@@ -541,6 +625,7 @@ subroutine capillary_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,
   integer, intent(in) :: min_elem,max_elem
 
   type(capillary_bf_parameters) :: cap_param
+  type(elasticity_param) :: elast_param
 
   character(len=60) :: sub_name
 !local variables
@@ -559,7 +644,7 @@ subroutine capillary_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,
   mechanics_parameters(2)=0.25_dp*0.1e-2_dp !pleural density, defines gradient in pleural pressure
 
   grav_dirn=2
-  grav_factor=-1.0_dp
+  grav_factor=0.0_dp
 
   grav_vect=0.d0
   if (grav_dirn.eq.1) then
@@ -592,7 +677,7 @@ subroutine capillary_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,
       eff_admit_downstream(i)=eff_admit(i,ne1)
     enddo
     call cap_flow_admit(ne,eff_admit(:,ne),eff_admit_downstream,Lin,Lout,P1,P2,&
-                        Ppl,Q01,Rin,Rout,x_cap,y_cap,z_cap,no_freq,harmonic_scale)
+                        Ppl,Q01,Rin,Rout,x_cap,y_cap,z_cap,no_freq,harmonic_scale,elast_param)
    enddo!ne
 
 end subroutine capillary_admittance
@@ -620,12 +705,12 @@ end subroutine capillary_admittance
 
     sub_name = 'pressure_factor'
     call enter_exit(sub_name,1)
+    p_factor=1.0_dp
     do nf=1,no_freq
       omega=nf*2*PI*harmonic_scale
       do ne=ne_min,ne_max
         !look for upstream element
         if(elem_cnct(-1,0,ne).eq.0)then !no upstream elements, inlet, ignore
-        write(*,*) 'element inlet', ne,ne_min,ne_max
         ne_up=ne_min
           p_factor(nf,ne)=(1.0_dp)!* &!assumes input admittance is the same as characteristic admittance for this vessel
             !exp(-1.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne))!/&
@@ -633,8 +718,8 @@ end subroutine capillary_admittance
         else
           ne_up=elem_cnct(-1,1,ne)
           p_factor(nf,ne)=p_factor(nf,ne_up)*(1+reflect(nf,ne_up))* &
-            exp(-1.0_dp*omega*elem_field(ne_length,ne_up)/prop_const(nf,ne_up))/&
-            (1+reflect(nf,ne)*exp(-2.0_dp*omega*elem_field(ne_length,ne)/prop_const(nf,ne)))
+            exp(-1.0_dp*omega*elem_field(ne_length,ne_up)*prop_const(nf,ne_up))/&
+            (1+reflect(nf,ne)*exp(-2.0_dp*omega*elem_field(ne_length,ne)*prop_const(nf,ne)))
         endif!neup
       enddo
     enddo!nf

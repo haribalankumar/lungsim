@@ -123,7 +123,7 @@ contains
       OUTPUT_PERFUSION)
     use diagnostics, only: enter_exit
     use solve, only: pmgmres_ilu_cr
-    use arrays, only:dp,capillary_bf_parameters
+    use arrays, only:dp,capillary_bf_parameters,elem_cnct
 
     type(capillary_bf_parameters) :: cap_param
 
@@ -283,7 +283,7 @@ contains
               '(I6,X,3(F9.2,X),I6,X,4(F8.2,X),4(F8.5,X),&
          2(F10.2,X),3(F8.4,X),I6,X,2(F10.5,X),2(F8.4,X),&
          (F10.2,X))')&
-         ne,x,y,z,gen,Pin,Pin_sheet,Pout_sheet,Pout,Qtot*1.d9,&
+         elem_cnct(-1,1,ne),x,y,z,gen,Pin,Pin_sheet,Pout_sheet,Pout,Qtot*1.d9,&
          Qgen*1.d9,Q_c*1.d9,(Hart-Hven)*1.d6,SHEET_RES/1000.d0**3.d0,&
          Rtot/1000.d0**3.d0,RBC_tt,Hart*1.d6,Hven*1.d6,zone,&
          (Hart/2.d0+Hven/2.d0)*area_new*1.d9*(2.d0**gen),&
@@ -306,7 +306,7 @@ contains
          WRITE(10,&
         '(I6,X,3(F9.2,X),I6,X,4(F8.2,X),4(F8.5,X),&
         2(F10.2,X),3(F8.4,X),I6,X,2(F10.5,X),3(F8.4,X))')&
-         ne,x,y,z,gen,Pin,Pin_sheet,Pout_sheet,Pout,Qtot*1.d9,&
+         elem_cnct(-1,1,ne),x,y,z,gen,Pin,Pin_sheet,Pout_sheet,Pout,Qtot*1.d9,&
          Qgen*1.d9,Q_c*1.d9,(Hart-Hven)*1.d6,SHEET_RES/1000.d0**3.d0,&
          Rtot/1000.d0**3.d0,RBC_tt,Hart*1.d6,Hven*1.d6,zone,&
          R_upstream,R_downstream,&
@@ -328,7 +328,7 @@ contains
 ! Rtot=9 Pa/mm^3 | Blood_vol=10 mm^3| sheet_area= 11 mm^2 | ave_TT=12 s |ave_H=13 um |Ppl=14 Pa
           WRITE(20,&
         '(I6,X,5(F9.2,X),2(F8.5,X),F10.2,X,F8.4,X,F10.4,X,F10.3,X,F8.4,X,F9.4,X)') &
-         ne,x,y,z,Pin,Pout,Q01_mthrees*1.d9,Qtot*1.d9,Rtot/1000.d0**3.d0,&
+         elem_cnct(-1,1,ne),x,y,z,Pin,Pout,Q01_mthrees*1.d9,Qtot*1.d9,Rtot/1000.d0**3.d0,&
          TOTAL_CAP_VOL,TOTAL_SHEET_SA,TT_TOTAL,TOTAL_SHEET_H,Ppl
         ENDIF
 !
@@ -842,7 +842,8 @@ end subroutine populate_matrix_ladder
 !
 subroutine cap_specific_parameters(ne,Ppl,alpha_c,area_scale,length_scale,l_a,rad_a,l_v,rad_v,ngen,&
     mu_app,R_in,R_out,L_in,L_out)
-    use arrays, only: dp
+    use indices, only: ne_length
+    use arrays, only: dp,elem_field
     use diagnostics, only: enter_exit
     use arrays, only:dp,capillary_bf_parameters
 
@@ -907,6 +908,8 @@ subroutine cap_specific_parameters(ne,Ppl,alpha_c,area_scale,length_scale,l_a,ra
       ENDDO
       cap_param%alpha_a=R_in/(6670.0_dp)
       cap_param%alpha_v=R_out/(6670.0_dp)
+      !store element length
+      elem_field(ne_length,ne)=L_a(1)*1000.0_dp
 
     call enter_exit(sub_name,2)
 end subroutine cap_specific_parameters
@@ -914,8 +917,8 @@ end subroutine cap_specific_parameters
 !################################################
 !
 subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
-  Ppl,Q01,Rin,Rout,x_cap,y_cap,z_cap,no_freq,harmonic_scale)
-  use arrays, only: dp,capillary_bf_parameters
+  Ppl,Q01,Rin,Rout,x_cap,y_cap,z_cap,no_freq,harmonic_scale,elast_param)
+  use arrays, only: dp,capillary_bf_parameters,elasticity_param
   use other_consts, only:PI
   use diagnostics, only: enter_exit
   use arrays, only:dp,capillary_bf_parameters,fluid_properties
@@ -928,6 +931,8 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
   real(dp), intent(inout) ::Lin,Lout,P1,P2,Ppl,Q01,Rin,Rout,x_cap,y_cap,z_cap
   real(dp), intent(in) :: harmonic_scale
 
+  type(elasticity_param) :: elast_param
+
   type(capillary_bf_parameters) :: cap_param
   type(fluid_properties) :: fp
   integer :: ngen
@@ -935,9 +940,9 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
   real(dp), allocatable :: l_a(:),rad_a(:),l_v(:),rad_v(:),mu_app(:)
   real(dp) :: radupdate,P_exta,P_extv,R_art1,R_ven1,R_art2,R_ven2,Q01_mthrees,Pin,Pout
   integer :: gen
-  real(dp) :: SHEET_RES,Q_c,Hart,Hven,RBC_TT,area,area_new,recruited,Gamma_sheet,omega
+  real(dp) :: SHEET_RES,Q_c,Hart,Hven,RBC_TT,area,area_new,recruited,omega
   integer :: zone,nf
-  complex(dp) :: bessel0,bessel1,f10
+  complex(dp) :: bessel0,bessel1,f10,Gamma_sheet
   real(dp) :: wolmer,wavespeed
 
   complex(dp), allocatable :: cap_admit(:,:)
@@ -946,7 +951,8 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
   complex(dp), allocatable :: tube_eff_admit(:,:)
   complex(dp), allocatable :: prop_const(:,:)
   complex(dp), allocatable :: prop_const_cap(:,:)
-  complex(dp) :: daughter_admit,sister_admit,reflect_coeff
+
+  complex(dp) :: daughter_admit,sister_admit,reflect_coeff,sister_current
 
 
   character(len=60) :: sub_name
@@ -977,6 +983,7 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
   if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array ***"
   allocate(prop_const_cap(ngen,no_freq), STAT = AllocateStatus)
   if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array ***"
+
   Pin=P1
   Pout=P2
   Q01_mthrees=Q01/1.0e9_dp
@@ -1017,12 +1024,12 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
      do nf=1,no_freq !radius needs to  be multipled by 1000 to go to mm (units of rest of model)
       !!!ARC TO FIX alpha_a is in m/Pa, need in 1/Pa (just read in from main model?)
        omega=nf*2*PI*harmonic_scale
-       wavespeed=sqrt(1.0_dp/(2*fp%blood_density*(cap_param%alpha_a/rad_a(gen))))!alpha in the sense of this model is 1/Pa so has to be dovided by radius
+       wavespeed=sqrt(1.0_dp/(2*fp%blood_density*(elast_param%elasticity_parameters(1))))!alpha in the sense of this model is 1/Pa so has to be dovided by radius
        wolmer=(radupdate*1000.0_dp)*sqrt(omega*fp%blood_density/mu_app(gen))
        call bessel_complex(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp),bessel0,bessel1)
        f10=2*bessel1/(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp)*bessel0)
        tube_admit(gen,nf)=PI*(radupdate*1000.0_dp)**2/(fp%blood_density*wavespeed)*sqrt(1-f10)
-       prop_const(gen,nf)=wavespeed*sqrt(1-f10)
+       prop_const(gen,nf)=omega/(wavespeed*sqrt(1-f10))
      enddo
 !!...    FIRST HALF OF VENULE
 !!...    Update radius of venule based on outlet pressure
@@ -1045,12 +1052,12 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
      Pout=Pout+R_ven1*Q01_mthrees
      do nf=1,no_freq !radius needs to  be multipled by 1000 to go to mm (units of rest of model)
        omega=nf*2*PI*harmonic_scale
-       wavespeed=sqrt(1.0_dp/(2*fp%blood_density*cap_param%alpha_v/rad_v(gen)))
+       wavespeed=sqrt(1.0_dp/(2*fp%blood_density*elast_param%elasticity_parameters(1))) !mm/s
        wolmer=(radupdate*1000.0_dp)*sqrt(omega*fp%blood_density/mu_app(gen))
        call bessel_complex(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp),bessel0,bessel1)
        f10=2*bessel1/(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp)*bessel0)
-       tube_admit(gen+2*ngen,nf)=PI*(radupdate*1000.0_dp)**2/(fp%blood_density*wavespeed)*sqrt(1-f10)
-       prop_const(gen+2*ngen,nf)=wavespeed*sqrt(1-f10)
+       tube_admit(gen+2*ngen,nf)=PI*(radupdate*1000.0_dp)**2/(fp%blood_density*wavespeed)*sqrt(1-f10)!mm3/Pa.s
+       prop_const(gen+2*ngen,nf)=omega/(wavespeed*sqrt(1-f10))!1/mm
      enddo
 
 !!...   CAPILLARY ELEMENT (arteriole + venule + capillary)
@@ -1058,12 +1065,14 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
        zone,Pin,Pout,area,area_new,alpha_c,area_scale,&
        length_scale,recruited)
        Q01_mthrees=Q01_mthrees-Q_c
-     Gamma_sheet=omega*cap_param%mu_c*cap_param%K_cap*cap_param%F_cap*alpha_c*2**3/(Hart+Hven)**3
-     Gamma_sheet=sqrt(Gamma_sheet/1.0e6_dp) !1/m2->1/mm^2
      do nf=1,no_freq
-       omega=nf*2*PI*harmonic_scale
-       cap_admit(gen,nf)=Gamma_sheet*sqrt(cmplx(0.0_dp,1.0_dp,8))
-         prop_const_cap(gen,nf)=Gamma_sheet
+      omega=nf*2*PI*harmonic_scale
+     Gamma_sheet=sqrt(omega*Hart**3*cap_param%L_c**2*alpha_c/&
+        (cap_param%mu_c*cap_param%K_cap*cap_param%F_cap))*&
+        sqrt(cmplx(0.0_dp,1.0_dp,8))*1000.0_dp**3 !mm3/Pa.s
+       cap_admit(gen,nf)=Gamma_sheet
+          prop_const_cap(gen,nf)=sqrt(cmplx(0.0_dp,1.0_dp,8)*&
+            cap_param%mu_c*cap_param%K_cap*cap_param%F_cap*omega*alpha_c/(Hart**3))/1000.0_dp!1/mm
      enddo
      !...   SECOND HALF OF ARTERIOLE
 !...    Update radius of arteriole based on inlet pressure
@@ -1084,12 +1093,12 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
 
      do nf=1,no_freq !radius needs to  be multipled by 1000 to go to mm (units of rest of model)
        omega=nf*2*PI*harmonic_scale
-       wavespeed=sqrt(1.0_dp/(2*fp%blood_density*cap_param%alpha_a/rad_a(gen)))
+       wavespeed=sqrt(1.0_dp/(2*fp%blood_density*elast_param%elasticity_parameters(1)))
        wolmer=(radupdate*1000.0_dp)*sqrt(omega*fp%blood_density/mu_app(gen))
        call bessel_complex(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp),bessel0,bessel1)
        f10=2*bessel1/(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp)*bessel0)
        tube_admit(gen+ngen,nf)=PI*(radupdate*1000.0_dp)**2/(fp%blood_density*wavespeed)*sqrt(1-f10)
-       prop_const(gen+ngen,nf)=wavespeed*sqrt(1-f10)
+       prop_const(gen+ngen,nf)=omega/(wavespeed*sqrt(1-f10))
      enddo
 
 !   SECOND HALF OF VENULE
@@ -1107,90 +1116,98 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
      Pout=Pout-R_ven2*Q01_mthrees
      do nf=1,no_freq !radius needs to  be multipled by 1000 to go to mm (units of rest of model)
        omega=nf*2*PI*harmonic_scale
-       wavespeed=sqrt(1.0_dp/(2*fp%blood_density*cap_param%alpha_v/rad_v(gen)))
+       wavespeed=sqrt(1.0_dp/(2*fp%blood_density*elast_param%elasticity_parameters(1))) !mm/s
        wolmer=(radupdate*1000.0_dp)*sqrt(omega*fp%blood_density/mu_app(gen))
        call bessel_complex(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp),bessel0,bessel1)
        f10=2*bessel1/(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp)*bessel0)
        tube_admit(gen+3*ngen,nf)=PI*(radupdate*1000.0_dp)**2/(fp%blood_density*wavespeed)*sqrt(1-f10)
-       prop_const(gen+3*ngen,nf)=wavespeed*sqrt(1-f10)
+       prop_const(gen+3*ngen,nf)=omega/(wavespeed*sqrt(1-f10)) !1/mm
      enddo
   enddo
   !!...   CAPILLARY ELEMENT (arteriole + venule + capillary)
   CALL CAP_FLOW_SHEET(ne,SHEET_RES,Q_c,Hart,Hven,RBC_TT, &
        zone,Pin,Pout,area,area_new,alpha_c,area_scale,&
-       length_scale,recruited)
-     Gamma_sheet=omega*cap_param%mu_c*cap_param%K_cap*cap_param%F_cap*alpha_c*2**3/(Hart+Hven)**3
-     Gamma_sheet=sqrt(Gamma_sheet/1.0e6_dp) !1/m2->1/mm^2
+       length_scale,recruited) !pa.s./pa/m3
+    do nf=1,no_freq
+     omega=nf*2*PI*harmonic_scale
+     Gamma_sheet=sqrt(omega*Hart**3*cap_param%L_c**2*alpha_c/&
+        (cap_param%mu_c*cap_param%K_cap*cap_param%F_cap))*&
+        sqrt(cmplx(0.0_dp,1.0_dp,8))*1000.0_dp**3
      gen=cap_param%num_symm_gen
-     do nf=1,no_freq
-       omega=nf*2*PI*harmonic_scale
-       cap_admit(cap_param%num_symm_gen,nf)=Gamma_sheet*sqrt(cmplx(0.0_dp,1.0_dp,8))
-          prop_const_cap(cap_param%num_symm_gen,nf)=Gamma_sheet
+       cap_admit(gen,nf)=Gamma_sheet
+          prop_const_cap(gen,nf)=sqrt(cmplx(0.0_dp,1.0_dp,8)*&
+            cap_param%mu_c*cap_param%K_cap*cap_param%F_cap*omega*alpha_c/(Hart**3))/1000.0_dp!1/mm
      enddo
   !FIRST GENERATION - need to relate to vein outlet admittance
   !first vein in generation
   do nf=1,no_freq
-   reflect_coeff=(eff_admit_downstream(nf)-2*tube_admit(1+2*ngen,nf))&
-      /(eff_admit_downstream(nf)+2*tube_admit(1+2*ngen,nf))
+  !sister and vessel are identical H=1.0
+   reflect_coeff=(2*tube_admit(1+2*ngen,nf)-eff_admit_downstream(nf))/(eff_admit_downstream(nf)+2*tube_admit(1+2*ngen,nf))
    tube_eff_admit(1+2*ngen,nf)=tube_admit(1+2*ngen,nf)*(1&
               -reflect_coeff*exp(-2.0_dp*prop_const(1+2*ngen,nf)*L_v(1)*1000.0_dp))/&
               (1+reflect_coeff*exp(-2.0_dp*prop_const(1+2*ngen,nf)*L_v(1)*1000.0_dp))
-   !write(*,*) 'reflect 1st vein',reflect_coeff,tube_eff_admit(1+2*ngen,nf)
-   !write(*,*) eff_admit_downstream(nf),tube_admit(1+2*ngen,nf)
   enddo
   !Now second vein and then capillary
-   do nf=1,no_freq
-   reflect_coeff=(tube_admit(1+2*ngen,nf)-tube_admit(1+3*ngen,nf)-cap_admit(1,nf))&
-     /(tube_admit(1+2*ngen,nf)+tube_admit(1+3*ngen,nf)+cap_admit(1,nf))
-   tube_eff_admit(1+3*ngen,nf)=tube_admit(1+3*ngen,nf)*(1&
+  do nf=1,no_freq
+  !Sister is capillary, vessel of interest is the vein
+    sister_current=exp(-1.0_dp*cmplx(0.0_dp,1.0_dp,8)*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp)/&
+      exp(-1.0_dp*cmplx(0.0_dp,1.0_dp,8)*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp)
+     reflect_coeff=(tube_admit(1+3*ngen,nf)+(2*sister_current-1)*cap_admit(1,nf)-tube_admit(1+2*ngen,nf))&
+       /(tube_admit(1+2*ngen,nf)+tube_admit(1+3*ngen,nf)+cap_admit(1,nf))
+     tube_eff_admit(1+3*ngen,nf)=tube_admit(1+3*ngen,nf)*(1&
               -reflect_coeff*exp(-2.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp))/&
               (1+reflect_coeff*exp(-2.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp))
-   !write(*,*) 'reflect 1st vein second half',reflect_coeff,tube_eff_admit(1+3*ngen,nf)
-  cap_eff_admit(1,nf)=cap_admit(1,nf)*(1&
-              -reflect_coeff*exp(-2.0_dp*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp))/&
-              (1+reflect_coeff*exp(-2.0_dp*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp))
-  !write(*,*) 'cap_eff level1',cap_eff_admit(1,nf)
+     !sister is the tube current is the capillary
+     sister_current=exp(-1.0_dp*cmplx(0.0_dp,1.0_dp,8)*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp)/&
+        exp(-1.0_dp*cmplx(0.0_dp,1.0_dp,8)*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp)
+     reflect_coeff=((2*sister_current-1)*tube_admit(1+3*ngen,nf)+cap_admit(1,nf)-tube_admit(1+2*ngen,nf))&
+       /(tube_admit(1+2*ngen,nf)+tube_admit(1+3*ngen,nf)+cap_admit(1,nf))
+     cap_eff_admit(1,nf)=cap_admit(1,nf)*(1&
+       -reflect_coeff*exp(-2.0_dp*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp))/&
+       (1+reflect_coeff*exp(-2.0_dp*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp))
   enddo
-
 
   do gen=2,cap_param%num_symm_gen-1
     do nf =1,no_freq
-      reflect_coeff=(tube_admit(gen+2*ngen-1,nf)-2*tube_admit(gen+2*ngen,nf))&
+      !Next two vessels are identical
+      reflect_coeff=(2*tube_admit(gen+2*ngen,nf)-tube_admit(gen+2*ngen-1,nf))&
         /(tube_admit(gen+2*ngen-1,nf)+2*tube_admit(gen+2*ngen,nf))
        tube_eff_admit(gen+2*ngen,nf)=tube_admit(gen+2*ngen,nf)*(1&
               -reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_v(gen)*1000.0_dp))/&
               (1+reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_v(gen)*1000.0_dp))
-   !write(*,*) 'first half vein',reflect_coeff,tube_eff_admit(gen+2*ngen,nf)
-
-    reflect_coeff=(tube_admit(gen+2*ngen,nf)-tube_admit(gen+3*ngen,nf)-cap_admit(gen,nf))&
-     /(tube_admit(gen+2*ngen,nf)+tube_admit(gen+3*ngen,nf)+cap_admit(gen,nf))
-    tube_eff_admit(gen+3*ngen,nf)=tube_admit(gen+3*ngen,nf)*(1&
+      !Next up a vein plus a capillary
+      sister_current=exp(-1.0_dp*cmplx(0.0_dp,1.0_dp,8)*prop_const_cap(gen,nf)*cap_param%L_c*1000.0_dp)/&
+        exp(-1.0_dp*cmplx(0.0_dp,1.0_dp,8)*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp)
+      reflect_coeff=(tube_admit(gen+3*ngen,nf)+(2*sister_current-1)*cap_admit(gen,nf)-tube_admit(gen+2*ngen,nf))&
+        /(tube_admit(gen+2*ngen,nf)+tube_admit(gen+3*ngen,nf)+cap_admit(gen,nf))
+      tube_eff_admit(gen+3*ngen,nf)=tube_admit(gen+3*ngen,nf)*(1&
               -reflect_coeff*exp(-2.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp))/&
               (1+reflect_coeff*exp(-2.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp))
-  ! write(*,*) 'reflect 1st vein second half',tube_admit(gen+3*ngen,nf),tube_eff_admit(gen+3*ngen,nf)
-    cap_eff_admit(gen,nf)=cap_admit(gen,nf)*(1&
+      !sister is the tube current is the capillary
+      sister_current=exp(-1.0_dp*cmplx(0.0_dp,1.0_dp,8)*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp)/&
+        exp(-1.0_dp*cmplx(0.0_dp,1.0_dp,8)*prop_const_cap(gen,nf)*cap_param%L_c*1000.0_dp)
+      reflect_coeff=((2*sister_current-1)*tube_admit(gen+3*ngen,nf)+cap_admit(gen,nf)-tube_admit(1+2*ngen,nf))&
+         /(tube_admit(1+2*ngen,nf)+tube_admit(gen+3*ngen,nf)+cap_admit(gen,nf))
+      cap_eff_admit(gen,nf)=cap_admit(gen,nf)*(1&
               -reflect_coeff*exp(-2.0_dp*prop_const_cap(gen,nf)*cap_param%L_c*1000.0_dp))/&
               (1+reflect_coeff*exp(-2.0_dp*prop_const_cap(gen,nf)*cap_param%L_c*1000.0_dp))
-  !write(*,*) 'cap_eff level',gen,cap_admit(gen,nf),cap_eff_admit(gen,nf),abs(reflect_coeff)
     enddo
   enddo
 
  !Final generation capillary
    gen=cap_param%num_symm_gen-1
    do nf=1,no_freq
-   !write(*,*) gen,tube_admit(gen+3*ngen,nf),cap_admit(cap_param%num_symm_gen,nf),L_a(gen)
-   reflect_coeff=(tube_admit(gen+3*ngen,nf)-2*cap_admit(cap_param%num_symm_gen,nf))&
-    /(tube_admit(gen+3*ngen,nf)+2*cap_admit(cap_param%num_symm_gen,nf))
-   cap_eff_admit(cap_param%num_symm_gen,nf)=cap_admit(cap_param%num_symm_gen,nf)*(1&
-              -reflect_coeff*exp(-2.0_dp*prop_const_cap(cap_param%num_symm_gen,nf)**cap_param%L_c*1000.0_dp))/&
-              (1+reflect_coeff*exp(-2.0_dp*prop_const_cap(cap_param%num_symm_gen,nf)*cap_param%L_c*1000.0_dp))
-   !write(*,*) 'lastcap',reflect_coeff,cap_eff_admit(cap_param%num_symm_gen,nf)
+   !two identical sisters
+     reflect_coeff=(2*cap_admit(cap_param%num_symm_gen,nf)-tube_admit(gen+3*ngen,nf))&
+       /(tube_admit(gen+3*ngen,nf)+2*cap_admit(cap_param%num_symm_gen,nf))
+     cap_eff_admit(cap_param%num_symm_gen,nf)=cap_admit(cap_param%num_symm_gen,nf)*(1&
+       -reflect_coeff*exp(-2.0_dp*prop_const_cap(cap_param%num_symm_gen,nf)**cap_param%L_c*1000.0_dp))/&
+       (1+reflect_coeff*exp(-2.0_dp*prop_const_cap(cap_param%num_symm_gen,nf)*cap_param%L_c*1000.0_dp))
   enddo
 
   !now calculate effective admittance up the arteriole side of the tree
    do gen=cap_param%num_symm_gen-1,1,-1
      do nf=1,no_freq
-   !write(*,*) gen,L_a(gen)
    !Second half of ateriole daughter admittance is 2* vessel below it
      if(gen.eq.(cap_param%num_symm_gen-1))then
        daughter_admit=2.0_dp*cap_eff_admit(cap_param%num_symm_gen,nf)
@@ -1202,7 +1219,6 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
      tube_eff_admit(gen+2*ngen,nf)=tube_admit(gen+2*ngen,nf)*(1&
               -reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_a(gen)*1000.0_dp))/&
               (1+reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_a(gen)*1000.0_dp))
-      !write(*,*) 'second half of arteriole',gen,tube_eff_admit(gen+2*ngen,nf)
       !first half of arteriole, daughter admittance is second half of arteriole plus cap
       daughter_admit=tube_eff_admit(gen+2*ngen,nf)+cap_eff_admit(gen,nf)
       reflect_coeff=(tube_admit(gen,nf)-daughter_admit)/&
@@ -1210,7 +1226,6 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
       tube_eff_admit(gen,nf)=tube_admit(gen,nf)*(1&
               -reflect_coeff*exp(-2.0_dp*prop_const(gen,nf)*L_a(gen)*1000.0_dp))/&
               (1+reflect_coeff*exp(-2.0_dp*prop_const(gen,nf)*L_a(gen)*1000.0_dp))
-      !write(*,*) 'first half of arteriole',gen,tube_eff_admit(gen,nf)
 
     enddo
    enddo
@@ -1218,7 +1233,7 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
    do nf=1,no_freq
      admit(nf)=tube_eff_admit(1,nf)*2.0_dp !!effective daughter admittance of first arteriole
    enddo
-   !write(*,*) 'exiting cap admit',no_freq,admit
+
 
   deallocate(l_a)
   deallocate(rad_a)
