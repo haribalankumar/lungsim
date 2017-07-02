@@ -107,7 +107,7 @@ else
 endif
 
 grav_dirn=2
-grav_factor=0.0_dp
+grav_factor=1.0_dp
 
 grav_vect=0.d0
 if (grav_dirn.eq.1) then

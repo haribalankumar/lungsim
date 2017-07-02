@@ -68,7 +68,7 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
   integer :: min_art,max_art,min_ven,max_ven,min_cap,max_cap,ne,nu,nt,nf,np
   character(len=30) :: tree_direction
   real(dp) start_time,end_time,dt,time,omega
-  integer :: AllocateStatus,fid=10,fid2=20,fid3=30,fid4=40
+  integer :: AllocateStatus,fid=10,fid2=20,fid3=30,fid4=40,fid5=50
   character(len=60) :: sub_name
 
   sub_name = 'evalulate_wave_transmission'
@@ -194,11 +194,7 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
 
 
   ! calculate effective admittance through the tree
-  if(mesh_type.eq.'simple_tree')then !single diverging tree
-     tree_direction='diverging'
-     call tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmonic_scale,&
-       1,num_elems,tree_direction)
-   elseif(mesh_type.eq.'full_plus_ladder')then
+   if(mesh_type.eq.'full_plus_ladder')then
      min_art=1
      ne=1
      do while(elem_field(ne_group,ne).eq.0.0_dp)
@@ -223,16 +219,30 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
    tree_direction='diverging'
    call tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmonic_scale,&
        min_art,max_art,tree_direction)
+   else!Assume simple tree
+     tree_direction='diverging'
+     min_art=1
+     max_art=num_elems
+     call tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmonic_scale,&
+       min_art,max_art,tree_direction)
    endif
    !calculate pressure drop through arterial tree (note to do veins too need to implement this concept thro' whole ladder model)
    !Also need to implement in reverse for veins
    call pressure_factor(no_freq,p_factor,reflect,prop_const,harmonic_scale,min_art,max_art)
    !n_time,heartrate,a0,no_freq,a,b
+  open(fid5, file = 'inputimpedance.txt',action='write')
+   write(fid5,fmt=*) 'input impedance:'
+   do nf=1,no_freq
+   omega=nf*harmonic_scale
+     write(fid5,fmt=*) omega,abs(eff_admit(nf,1)),&
+       atan2(imagpart(eff_admit(nf,1)),realpart(eff_admit(nf,1)))
+   enddo
+  close(fid5)
+
    start_time=0.0_dp
    end_time=60.0_dp/heartrate
    dt=(end_time-start_time)/n_time
    time=start_time
-   write(*,*) start_time,end_time,dt
    !consider first pressure and flow into the vessel (at x=0)
    open(fid, file = 'incident_pressure.txt',action='write')
    open(fid2, file = 'incident_flow.txt',action='write')
@@ -277,8 +287,8 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
    write(fid,fmt=*) ne, forward_pressure+node_field(nj_press,np)
    write(fid2,fmt=*) ne, forward_flow+elem_field(ne_flow,ne)
 
-   write(fid3,fmt=*) ne, forward_pressure+node_field(nj_press,np)+reflected_pressure
-   write(fid4,fmt=*) ne, forward_flow+elem_field(ne_flow,ne)-reflected_flow
+   write(fid3,fmt=*) ne, forward_pressure+reflected_pressure !node_field(nj_press,np)
+   write(fid4,fmt=*) ne, forward_flow-reflected_flow !elem_field(ne_flow,ne)
    !   elem_field(ne_length,ne),abs(p_factor(1,ne))*a(1),&
         !abs(reflect(1,ne)),abs(char_admit(1,ne)),node_xyz(2,ne)
 
@@ -340,13 +350,13 @@ subroutine boundary_admittance(no_freq,eff_admit,char_admit,admit_param,harmonic
           do nunit=1,num_units
             ne=units(nunit)
            !temporarily store in eff_admit, to be added to the char admit
-            eff_admit(nf,ne)=(1.0_dp+cmplx(0,1.0_dp)*omega*R1*C)/R1
+            eff_admit(nf,ne)=(1.0_dp+cmplx(0.0_dp,1.0_dp)*omega*R1*C)/R1
           enddo
         elseif(mesh_type.eq.'full_plus_ladder')then
           do ne=1,num_elems
             if(elem_cnct(1,0,ne).eq.0)then
               !temporarily store in eff_admit, to be added to the char admit
-              eff_admit(nf,ne)=(1.0_dp+cmplx(0,1.0_dp)*omega*R1*C)/R1
+              eff_admit(nf,ne)=(1.0_dp+cmplx(0.0_dp,1.0_dp)*omega*R1*C)/R1
             endif
           enddo
         endif
@@ -361,7 +371,7 @@ subroutine boundary_admittance(no_freq,eff_admit,char_admit,admit_param,harmonic
           do nunit=1,num_units
             ne=units(nunit)
             !temporarily store in eff_admit, to be added to the char admit
-            eff_admit(nf,ne)=(1+cmplx(0,1)*omega*R2*C)/(R1+R2+cmplx(0,1)*omega*R1*R2*C)
+            eff_admit(nf,ne)=(1+cmplx(0.0_dp,1.0_dp)*omega*R2*C)/(R1+R2+cmplx(0,1)*omega*R1*R2*C)
           enddo
         elseif(mesh_type.eq.'full_plus_ladder')then
           do ne=1,num_elems
@@ -457,7 +467,7 @@ subroutine characteristic_admittance(no_freq,char_admit,prop_const,harmonic_scal
   call enter_exit(sub_name,1)
   E=elast_param%elasticity_parameters(1) !Pa
   h_bar=elast_param%elasticity_parameters(2)!this is a fraction of the radius so is unitless
-
+       open(50, file = 'influence_of_vis.txt',action='write')
   do ne=1,num_elems
     if(admit_param%admittance_type.eq.'lachase_standard')then
       h=h_bar*elem_field(ne_radius_out0,ne)
@@ -484,14 +494,15 @@ subroutine characteristic_admittance(no_freq,char_admit,prop_const,harmonic_scal
     elseif(admit_param%admittance_type.eq.'duan_zamir')then
      do nf=1,no_freq !radius needs to  be multipled by 1000 to go to mm (units of rest of model)
        omega=nf*2*PI*harmonic_scale!q/s
-       wavespeed=sqrt(1.0_dp/(2*density*elast_param%elasticity_parameters(1))) !mm/s
-       !wolmer=(elem_field(ne_radius_out0,ne))*sqrt(omega*density/viscosity)
-       wolmer=(elem_field(ne_radius_out,ne))*sqrt(omega*density/viscosity)
+       wolmer=(elem_field(ne_radius_out0,ne))*sqrt(omega*density/viscosity)
        call bessel_complex(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp),bessel0,bessel1)
        f10=2*bessel1/(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp)*bessel0)!no units
-       !char_admit(nf,ne)=PI*(elem_field(ne_radius_out0,ne))**2/(density*wavespeed)*sqrt(1-f10)!mm3/Pa.s
-       char_admit(nf,ne)=PI*(elem_field(ne_radius_out,ne))**2/(density*wavespeed)*sqrt(1-f10)
-       prop_const(nf,ne)=omega/(wavespeed*sqrt(1-f10))!1/mm
+       wavespeed=sqrt(1.0_dp/(2*density*elast_param%elasticity_parameters(1)))*sqrt(1-f10)! !mm/s
+       char_admit(nf,ne)=PI*(elem_field(ne_radius_out0,ne))**2/(density*wavespeed/(1-f10))*sqrt(1-f10)!mm3/Pa
+       prop_const(nf,ne)=cmplx(0.0_dp,1.0_dp,8)*omega/(wavespeed)!1/mm
+
+        write(50,fmt=*) ne, abs(sqrt(1-f10)),atan2(imagpart(sqrt(1-f10)),realpart(sqrt(1-f10))),&
+          elem_field(ne_radius_out0,ne),wolmer
      enddo
     else !Unrecognised admittance model
       print *, "EXITING"
@@ -507,7 +518,7 @@ subroutine characteristic_admittance(no_freq,char_admit,prop_const,harmonic_scal
       enddo!nf
     endif
   enddo!ne
-
+  close(50)
 
   call enter_exit(sub_name,2)
 end subroutine characteristic_admittance
@@ -532,12 +543,14 @@ subroutine tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmo
   character(len=60) :: sub_name
 !local variables
   real(dp) :: invres,elem_res(num_elems),omega
-  integer :: num2,ne,ne2,nf,num3,ne3
-  complex(dp) :: daughter_admit,sister_admit,sister_current
+  integer :: num2,ne,ne2,nf,num3,ne3,ne_sist
+  complex(dp) :: daughter_admit,sister_admit,sister_current,a,b,m1,m2
 
     sub_name = 'tree_admittance'
     call enter_exit(sub_name,1)
     reflect(:,:)=cmplx(0.0_dp,0.0_dp,8)
+
+    write(*,*) 'in tree_admittance',tree_direction
 
     if(tree_direction.eq.'diverging')then
       do nf=1,no_freq
@@ -578,18 +591,25 @@ subroutine tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmo
              do num3=1,elem_cnct(-1,0,ne2)!sisters
                ne3=elem_cnct(-1,num3,ne2)!for each upstream element of the daughter
                if(ne3.ne.ne)then
+                  ne_sist=ne3
                   sister_admit=sister_admit+char_admit(nf,ne3)
-                  sister_current=exp(-1.0_dp*cmplx(0.0_dp,1.0_dp,8)*prop_const(nf,ne3)*elem_field(ne_length,ne3))/&
-                   exp(-1.0_dp*cmplx(0.0_dp,1.0_dp,8)*prop_const(nf,ne)**elem_field(ne_length,ne))
+                  sister_current=exp(-1.0_dp*prop_const(nf,ne3)*elem_field(ne_length,ne3))/&
+                   exp(-1.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne))
+                   a=exp(-1.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne))
+                   b=exp(-1.0_dp*prop_const(nf,ne3)*elem_field(ne_length,ne3))
                endif
              enddo
           enddo
+          m1=1.0_dp+2.0_dp*(b/a)*((2*a*b-a**2-1)*char_admit(nf,ne)+&
+            (a**2-1)*sister_admit+(a**2-1)*daughter_admit)/((1-b**2)*char_admit(nf,ne)+&
+            (1+b**2-2*a*b)*sister_admit+(1-b**2)*daughter_admit)
           if(elem_cnct(1,0,ne).gt.0)then !not a terminal
-            reflect(nf,ne)=(char_admit(nf,ne)+(2*sister_current-1)*sister_admit-daughter_admit)/&
+            reflect(nf,ne)=(char_admit(nf,ne)-m1*sister_admit-daughter_admit)/&
               (char_admit(nf,ne)+daughter_admit+sister_admit)!ARC- to check
             eff_admit(nf,ne)=char_admit(nf,ne)*(1&
               -reflect(nf,ne)*exp(-2.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne)))/&
               (1+reflect(nf,ne)*exp(-2.0_dp*prop_const(nf,ne)*elem_field(ne_length,ne)))
+
           else!a terminal
             daughter_admit=eff_admit(nf,ne) !a boundary condition is applied here
              reflect(nf,ne)=(char_admit(nf,ne)-daughter_admit)/&
@@ -644,7 +664,7 @@ subroutine capillary_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,
   mechanics_parameters(2)=0.25_dp*0.1e-2_dp !pleural density, defines gradient in pleural pressure
 
   grav_dirn=2
-  grav_factor=0.0_dp
+  grav_factor=1.0_dp
 
   grav_vect=0.d0
   if (grav_dirn.eq.1) then
@@ -705,6 +725,7 @@ end subroutine capillary_admittance
 
     sub_name = 'pressure_factor'
     call enter_exit(sub_name,1)
+
     p_factor=1.0_dp
     do nf=1,no_freq
       omega=nf*2*PI*harmonic_scale
@@ -718,10 +739,10 @@ end subroutine capillary_admittance
         else
           ne_up=elem_cnct(-1,1,ne)
           p_factor(nf,ne)=p_factor(nf,ne_up)*(1+reflect(nf,ne_up))* &
-            exp(-1.0_dp*omega*elem_field(ne_length,ne_up)*prop_const(nf,ne_up))/&
-            (1+reflect(nf,ne)*exp(-2.0_dp*omega*elem_field(ne_length,ne)*prop_const(nf,ne)))
+            exp(-1.0_dp*elem_field(ne_length,ne_up)*prop_const(nf,ne_up))/&
+            (1+reflect(nf,ne)*exp(-2.0_dp*elem_field(ne_length,ne)*prop_const(nf,ne)))
         endif!neup
-      enddo
+      enddo!ne
     enddo!nf
 
     call enter_exit(sub_name,2)
