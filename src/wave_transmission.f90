@@ -467,7 +467,6 @@ subroutine characteristic_admittance(no_freq,char_admit,prop_const,harmonic_scal
   call enter_exit(sub_name,1)
   E=elast_param%elasticity_parameters(1) !Pa
   h_bar=elast_param%elasticity_parameters(2)!this is a fraction of the radius so is unitless
-       open(50, file = 'influence_of_vis.txt',action='write')
   do ne=1,num_elems
     if(admit_param%admittance_type.eq.'lachase_standard')then
       h=h_bar*elem_field(ne_radius_out0,ne)
@@ -500,9 +499,6 @@ subroutine characteristic_admittance(no_freq,char_admit,prop_const,harmonic_scal
        wavespeed=sqrt(1.0_dp/(2*density*elast_param%elasticity_parameters(1)))*sqrt(1-f10)! !mm/s
        char_admit(nf,ne)=PI*(elem_field(ne_radius_out0,ne))**2/(density*wavespeed/(1-f10))*sqrt(1-f10)!mm3/Pa
        prop_const(nf,ne)=cmplx(0.0_dp,1.0_dp,8)*omega/(wavespeed)!1/mm
-
-        write(50,fmt=*) ne, abs(sqrt(1-f10)),atan2(imagpart(sqrt(1-f10)),realpart(sqrt(1-f10))),&
-          elem_field(ne_radius_out0,ne),wolmer
      enddo
     else !Unrecognised admittance model
       print *, "EXITING"
@@ -518,7 +514,6 @@ subroutine characteristic_admittance(no_freq,char_admit,prop_const,harmonic_scal
       enddo!nf
     endif
   enddo!ne
-  close(50)
 
   call enter_exit(sub_name,2)
 end subroutine characteristic_admittance
