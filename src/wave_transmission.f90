@@ -66,8 +66,9 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
   real(dp), allocatable :: forward_flow(:)
   real(dp), allocatable :: reflected_flow(:)
   integer :: min_art,max_art,min_ven,max_ven,min_cap,max_cap,ne,nu,nt,nf,np
-  character(len=30) :: tree_direction
+  character(len=30) :: tree_direction,mechanics_type
   real(dp) start_time,end_time,dt,time,omega
+  real(dp) grav_vect(3), grav_dirn,grav_factor,mechanics_parameters(2)
   integer :: AllocateStatus,fid=10,fid2=20,fid3=30,fid4=40,fid5=50
   character(len=60) :: sub_name
 
@@ -151,6 +152,29 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
     print *, 'ERROR: Your boundary condition choice has not yet been implemented'
     call exit(0)
   endif
+  mechanics_type='linear'
+  if (mechanics_type.eq.'linear') then
+    mechanics_parameters(1)=5.0_dp*98.07_dp !average pleural pressure (Pa)
+    mechanics_parameters(2)=0.25_dp*0.1e-2_dp !pleural density, defines gradient in pleural pressure
+  else
+    print *, 'ERROR: Only linear mechanics models have been implemented to date,assuming default parameters'
+     call exit(0)
+  endif
+
+  grav_dirn=2
+  grav_factor=1.0_dp
+  grav_vect=0.d0
+  if (grav_dirn.eq.1) then
+     grav_vect(1)=1.0_dp
+  elseif (grav_dirn.eq.2) then
+      grav_vect(2)=1.0_dp
+  elseif (grav_dirn.eq.3) then
+    grav_vect(3)=1.0_dp
+  else
+     print *, "ERROR: Posture not recognised (currently only x=1,y=2,z=3))"
+     call exit(0)
+  endif
+  grav_vect=grav_vect*grav_factor
 
   !!Determine steady component of flow
   if(a0.eq.0.0_dp)then !Using steady flow solution at inlet as a0
@@ -186,7 +210,7 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
   eff_admit=0.0_dp
   !calculate characteristic admittance of each branch
   call characteristic_admittance(no_freq,char_admit,prop_const,harmonic_scale, &
-    density,viscosity,admit_param,elast_param)
+    density,viscosity,admit_param,elast_param,mechanics_parameters,grav_vect)
 
   !Apply boundary conditions to terminal units
   call boundary_admittance(no_freq,eff_admit,char_admit,admit_param,harmonic_scale,&
@@ -214,7 +238,7 @@ subroutine evaluate_wave_transmission(n_time,heartrate,a0,no_freq,a,b,n_adparams
        min_ven,max_ven,tree_direction)
    !cap admittance
    call capillary_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmonic_scale,&
-     min_cap,max_cap,elast_param)
+     min_cap,max_cap,elast_param,mechanics_parameters,grav_vect)
    !art admittance
    tree_direction='diverging'
    call tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmonic_scale,&
@@ -437,11 +461,12 @@ end subroutine boundary_admittance
 !
 !*characteristic_admittance* calculates the characteristic admittance of each
 subroutine characteristic_admittance(no_freq,char_admit,prop_const,harmonic_scale,&
-  density,viscosity,admit_param,elast_param)
+  density,viscosity,admit_param,elast_param,mechanics_parameters,grav_vect)
 !DEC$ ATTRIBUTES DLLEXPORT, ALIAD:"SO_characteristic_admittance: characteristic_admittance
   use other_consts, only: MAX_STRING_LEN
   use indices
-  use arrays, only: num_elems,elem_field,elasticity_param,all_admit_param
+  use arrays, only: num_elems,elem_field,elasticity_param,all_admit_param,elem_nodes
+  use pressure_resistance_flow, only: calculate_ppl
   use math_utilities, only: bessel_complex
   use diagnostics, only: enter_exit
 
@@ -451,6 +476,7 @@ subroutine characteristic_admittance(no_freq,char_admit,prop_const,harmonic_scal
   real(dp), intent(in) :: harmonic_scale
   real(dp), intent(in) :: density
   real(dp), intent(in) :: viscosity
+  real(dp),intent(in) :: mechanics_parameters(2),grav_vect(3)
 
   type(elasticity_param) :: elast_param
   type(all_admit_param) :: admit_param
@@ -459,9 +485,34 @@ subroutine characteristic_admittance(no_freq,char_admit,prop_const,harmonic_scal
   real(dp) :: L,C,R, G,omega,gen_factor
   real(dp) :: E,h_bar,h,wavespeed,wolmer !should be global - maybe express as alpha (i.e. pre multiply)
   complex(dp) :: f10,bessel0,bessel1
-  integer :: ne,nf
+  integer :: ne,nf,nn,np
   integer :: exit_status=0
+  real(dp) :: R0,Ppl,Ptm,Rg_in,Rg_out
   character(len=60) :: sub_name
+
+  write(*,*) 'update unstrained radius to account for gravity - effectively applying a gravity boundary condition'
+  write(*,*) grav_vect, mechanics_parameters
+
+  do ne=1,num_elems
+    do nn=1,2
+      if(nn.eq.1) np=elem_nodes(1,ne)
+      if(nn.eq.2) np=elem_nodes(2,ne)
+      call calculate_ppl(np,grav_vect,mechanics_parameters,Ppl)
+      Ptm=Ppl     ! Pa
+      if(nn.eq.1)R0=elem_field(ne_radius_in0,ne)
+      if(nn.eq.2)R0=elem_field(ne_radius_out0,ne)
+      if(admit_param%admittance_type.eq.'duan_zamir')then!alpha controls elasticity
+       if(nn.eq.1)Rg_in=R0*(Ptm*elast_param%elasticity_parameters(1)+1.d0)
+       if(nn.eq.2)Rg_out=R0*(Ptm*elast_param%elasticity_parameters(1)+1.d0)
+      else!Hooke type elasticity
+         h=elast_param%elasticity_parameters(2)*R0
+        if(nn.eq.1) Rg_in=R0+3.0_dp*R0**2*Ptm/(4.0_dp*elast_param%elasticity_parameters(1)*h)
+        if(nn.eq.2) Rg_out=R0+3.0_dp*R0**2*Ptm/(4.0_dp*elast_param%elasticity_parameters(1)*h)
+      endif
+     enddo
+     elem_field(ne_radius_out0,ne)=(Rg_in-Rg_out)/2.0_dp
+     write(*,*) ne, R0, Rg_in,Rg_out,Ppl
+  enddo
 
   sub_name = 'characteristic_admittance'
   call enter_exit(sub_name,1)
@@ -545,8 +596,6 @@ subroutine tree_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmo
     call enter_exit(sub_name,1)
     reflect(:,:)=cmplx(0.0_dp,0.0_dp,8)
 
-    write(*,*) 'in tree_admittance',tree_direction
-
     if(tree_direction.eq.'diverging')then
       do nf=1,no_freq
         omega=nf*2*PI*harmonic_scale
@@ -623,7 +672,7 @@ end subroutine tree_admittance
 !
 !*capillaryadmittance:* Calculates the total admittance of a tree
 subroutine capillary_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,harmonic_scale,&
-  min_elem,max_elem,elast_param)
+  min_elem,max_elem,elast_param,mechanics_parameters,grav_vect)
   use indices
   use arrays,only: dp,num_elems,elem_cnct,elem_field,capillary_bf_parameters,elem_nodes,&
     node_field,node_xyz,elasticity_param
@@ -638,6 +687,7 @@ subroutine capillary_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,
   complex(dp), intent(in) :: prop_const(1:no_freq,num_elems)
   real(dp), intent(in) :: harmonic_scale
   integer, intent(in) :: min_elem,max_elem
+  real(dp),intent(in) :: mechanics_parameters(2),grav_vect(3)
 
   type(capillary_bf_parameters) :: cap_param
   type(elasticity_param) :: elast_param
@@ -647,7 +697,7 @@ subroutine capillary_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,
   integer :: ne, ne2,num2,nf,ne0,ne1
   real(dp) :: daughter_admit,omega,length,Hart,Hven,Gamma_sheet,alpha_c,Ptp
   integer :: grav_dirn,i
-  real(dp) :: mechanics_parameters(2),grav_factor,grav_vect(3),Ppl,P1,P2
+  real (dp) :: Ppl,P1,P2
   real(dp) :: Q01,Rin,Rout,Lin,Lout,x_cap,y_cap,z_cap
   complex(dp) :: eff_admit_downstream(no_freq)
 
@@ -655,24 +705,6 @@ subroutine capillary_admittance(no_freq,eff_admit,char_admit,reflect,prop_const,
   call enter_exit(sub_name,1)
   reflect(:,:)=cmplx(0.0_dp,0.0_dp,8)
 
-  mechanics_parameters(1)=5.0_dp*98.07_dp !average pleural pressure (Pa)
-  mechanics_parameters(2)=0.25_dp*0.1e-2_dp !pleural density, defines gradient in pleural pressure
-
-  grav_dirn=2
-  grav_factor=1.0_dp
-
-  grav_vect=0.d0
-  if (grav_dirn.eq.1) then
-    grav_vect(1)=1.0_dp
-  elseif (grav_dirn.eq.2) then
-    grav_vect(2)=1.0_dp
-  elseif (grav_dirn.eq.3) then
-    grav_vect(3)=1.0_dp
-  else
-     print *, "ERROR: Posture not recognised (currently only x=1,y=2,z=3))"
-     call exit(0)
-  endif
-  grav_vect=grav_vect*grav_factor
   do ne=min_elem,max_elem
     ne0=elem_cnct(-1,1,ne)!upstream element number
     ne1=elem_cnct(1,1,ne)
