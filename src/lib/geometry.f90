@@ -973,6 +973,7 @@ contains
     n_max_ord=elem_ordrs(nindex,ne)
     elem_field(ne_radius,ne)=START_RAD
 
+
     do ne=ne_min,ne_max
      radius=10.0_dp**(log10(CONTROL_PARAM)*dble(elem_ordrs(nindex,ne)-n_max_ord)&
         +log10(START_RAD))
@@ -1135,7 +1136,8 @@ contains
           WRITE(*,*) ' Node ',np,' attached to',num_attach,' elements'
        ENDIF
     ENDDO
-
+     write(*,*) 'Maximum Strahler order', elem_ordrs(3,1)
+     write(*,*) 'Maximum Horsfield order', elem_ordrs(2,1)
     call enter_exit(sub_name,2)
 
   end subroutine evaluate_ordering

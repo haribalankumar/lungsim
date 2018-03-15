@@ -58,13 +58,17 @@ module arrays
     real(dp) :: R_vein_terminal=0.90000e-05!m
   end type capillary_bf_parameters
 
+  real(dp) :: alpha_factor=1.0_dp
+  real(dp) :: alveolar_factor=1.0_dp
+
 ! temporary, for debugging:
   real(dp) :: unit_before
 
   private
   public set_node_field_value, elem_field, num_elems, elem_nodes, node_xyz, nodes, elems, &
     num_nodes, units, num_units, unit_field, node_field, dp, elem_cnct, elem_ordrs, elem_direction, &
-    elems_at_node, elem_symmetry, expansile, elem_units_below, maxgen,capillary_bf_parameters
+    elems_at_node, elem_symmetry, expansile, elem_units_below, maxgen,capillary_bf_parameters,&
+    alpha_factor,alveolar_factor
 
 contains
   subroutine set_node_field_value(row, col, value)

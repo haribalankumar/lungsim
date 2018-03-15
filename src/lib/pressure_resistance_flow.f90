@@ -28,7 +28,8 @@ contains
   !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_EVALUATE_PRQ" :: EVALUATE_PRQ
     use indices
     use capillaryflow,only: cap_flow_ladder
-    use arrays,only: dp,num_elems,num_nodes,elem_field,elem_nodes,elem_cnct,node_xyz
+    use arrays,only: dp,num_elems,num_nodes,elem_field,elem_nodes,elem_cnct,node_xyz,&
+      alpha_factor,alveolar_factor
     use diagnostics, only: enter_exit
     !local variables
     integer :: mesh_dof,depvar_types
@@ -78,10 +79,25 @@ vessel_type='elastic_g0_beta'
 mechanics_type='linear'
 bc_type='pressure'
 
+!Effects of aging
+alpha_factor=0.88_dp
+write(*,*) 'alpha_factor',alpha_factor
+alveolar_factor=0.81_dp
+write(*,*) 'alveolar_factor', alveolar_factor
+
+if(bc_type.eq.'pressure')then
+    inletbc=1985.0_dp!15.0_dp*133.0_dp!2266.0_dp
+    outletbc=7.0_dp*133.0_dp!666.7_dp
+elseif(bc_type.eq.'flow')then
+    print  *, "ERROR: Flow boundary conditions not yet implemented"
+     call exit(0)
+endif
+
+
 if (vessel_type.eq.'rigid') then
     elasticity_parameters=0.0_dp
 elseif (vessel_type.eq.'elastic_g0_beta') then
-    elasticity_parameters(1)=6.67e3_dp!G0 (Pa)
+    elasticity_parameters(1)=6.67e3_dp/alpha_factor!G0 (Pa)
     elasticity_parameters(2)=1.0_dp!elasticity_parameters(2)
     elasticity_parameters(3)=32.0_dp*98.07_dp !elasticity_parameters(3) (Pa)
 elseif (vessel_type.eq.'elastic_alpha') then
@@ -106,7 +122,7 @@ else
      call exit(0)
 endif
 
-grav_dirn=2
+grav_dirn=3
 grav_factor=-1.0_dp
 
 grav_vect=0.d0
@@ -122,13 +138,6 @@ else
 endif
 grav_vect=grav_vect*grav_factor
 
-if(bc_type.eq.'pressure')then
-    inletbc=15.0_dp*133.0_dp!2266.0_dp
-    outletbc=5.0_dp*133.0_dp!666.7_dp
-elseif(bc_type.eq.'flow')then
-    print  *, "ERROR: Flow boundary conditions not yet implemented"
-     call exit(0)
-endif
 
 !!---------PHYSICAL PARAMETERS-----------
 !viscosity: fluid viscosity

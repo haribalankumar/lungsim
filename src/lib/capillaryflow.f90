@@ -57,7 +57,7 @@ contains
 !###  UNITS. The units that are used here are m.
 
     use diagnostics, only: enter_exit
-    use arrays, only:dp,capillary_bf_parameters,num_units
+    use arrays, only:dp,capillary_bf_parameters,num_units,alveolar_factor
     integer, intent(in) :: ne
     real(dp), intent(inout) :: LPM_FUNC
     real(dp):: Pin,Pout,Q01,R_in,R_out,x,y,z,Lin,Lout,Ppl
@@ -98,7 +98,7 @@ contains
       DO i=1,cap_param%num_symm_gen
          sheet_number=sheet_number+2.d0**i
       ENDDO
-      area=cap_param%total_cap_area/(sheet_number*num_units) !m^2
+      area=cap_param%total_cap_area*alveolar_factor/(sheet_number*num_units) !m^2
 !
 !!  ---CALL THE FUNCTIONS THAT CALCULATE THE FLOW ACROSS THE LADDER FOR A GIVEN PRESSURE DROP--
       call evaluate_ladder(ne,NonZeros,MatrixSize,submatrixsize,ngen,&
@@ -842,9 +842,8 @@ end subroutine populate_matrix_ladder
 !
 subroutine cap_specific_parameters(ne,Ppl,alpha_c,area_scale,length_scale,l_a,rad_a,l_v,rad_v,ngen,&
     mu_app,R_in,R_out,L_in,L_out)
-    use arrays, only: dp
     use diagnostics, only: enter_exit
-    use arrays, only:dp,capillary_bf_parameters
+    use arrays, only:dp,capillary_bf_parameters,alpha_factor,alveolar_factor
 
     type(capillary_bf_parameters) :: cap_param
 
@@ -874,6 +873,7 @@ subroutine cap_specific_parameters(ne,Ppl,alpha_c,area_scale,length_scale,l_a,ra
          length_scale=(1.0_dp-0.8_dp*exp(-0.1_dp*Ptp))**(1.0_dp/3.0_dp)
          area_scale=(1.0_dp-0.8_dp*exp(-0.1_dp*Ptp))**(2.0_dp/3.0_dp)
       ENDIF
+
 
 !...   KSB 18/08/09: Including effect of lung inflation on sheet compliance
 !...   Below value is scaled from dog lung measurements. This is valid in the
@@ -905,8 +905,8 @@ subroutine cap_specific_parameters(ne,Ppl,alpha_c,area_scale,length_scale,l_a,ra
         rad_a(i)=(cap_param%R_art_terminal*sqrt(1.0_dp/stretch)-R_in)*i/cap_param%num_symm_gen+R_in
         rad_v(i)=(cap_param%R_vein_terminal*sqrt(1.0_dp/stretch)-R_out)*i/cap_param%num_symm_gen+R_out
       ENDDO
-      cap_param%alpha_a=R_in/(6670.0_dp)
-      cap_param%alpha_v=R_out/(6670.0_dp)
+      cap_param%alpha_a=R_in/(6670.0_dp)*alpha_factor
+      cap_param%alpha_v=R_out/(6670.0_dp)*alpha_factor
 
     call enter_exit(sub_name,2)
 end subroutine cap_specific_parameters
