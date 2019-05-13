@@ -36,12 +36,14 @@ module geometry
   public evaluate_ordering
   public get_final_real
   public get_local_node_f
-  public inlist
   public make_data_grid
   public reallocate_node_elem_arrays
   public set_initial_volume
   public triangles_from_surface
   public volume_of_mesh
+  public get_final_integer
+  public get_four_nodes
+
 
 contains
 !
@@ -616,6 +618,7 @@ contains
 !
 !###################################################################################
 !
+
 !*define_mesh_geometry_test:*
   subroutine define_mesh_geometry_test()
   !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_DEFINE_MESH_GEOMETRY_TEST" :: DEFINE_MESH_GEOMETRY_TEST
@@ -1308,7 +1311,7 @@ contains
       if(to_export)then
          !!! export vertices as nodes
          writefile = trim(filename)//'.exnode'
-         open(10, file = writefile, status='replace')
+         open(10, file = writefile)
          !**    write the group name
          write(10,'( '' Group name: '',A)') trim(groupname)
          !*** Exporting Geometry
@@ -1332,9 +1335,9 @@ contains
       !!! export the triangles as surface elements
       writefile = trim(filename)//'.exelem'
       open(10, file=writefile, status='replace')
-      !**     write the group name
+      !**     write the group name
       write(10,'( '' Group name: '',a10)') groupname
-      !**     write the lines
+      !**     write the lines
       write(10,'( '' Shape. Dimension=1'' )')
       nline=0
       do ne = 1,num_triangles
@@ -1354,7 +1357,7 @@ contains
 
       do nj=1,3
         if(nj==1) char1='x'; if(nj==2) char1='y'; if(nj==3) char1='z';
-        write(10,'(''  '',A2,''. l.Lagrange*l.Lagrange, no modify, standard node based.'')') char1
+        write(10,'(''  '',A2,''. l.Lagrange*l.Lagrange, no modify, standard node based.'')') char1
         write(10,'( ''   #Nodes=4'')')
         do nn=1,4
           write(10,'(''   '',I1,''. #Values=1'')') nn
@@ -2296,6 +2299,8 @@ contains
         parentlist(num_parents)=ne
      endif !elem_cnct
    enddo !noelem
+
+   !write(*,*) 'elems', parentlist
 
    deallocate(templist)
 
