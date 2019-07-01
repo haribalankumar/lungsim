@@ -1678,7 +1678,8 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
        prop_const(gen+3*ngen,nf)=cmplx(0.0_dp,1.0_dp,8)*omega/(wavespeed) !1/mm
      enddo
   enddo
-
+!write(*,*) 'I am here'
+!pause
   !!...   CAPILLARY ELEMENT (arteriole + venule + capillary)  at terminal
     Pin_sheet=Pressure(4*cap_param%num_symm_gen-6) !%pressure into final capillary sheets
     Pout_sheet=Pressure(4*cap_param%num_symm_gen-4) !%pressure out of final capillary sheets
@@ -1705,6 +1706,8 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
    tube_eff_admit(1+2*ngen,nf)=tube_admit(1+2*ngen,nf)*(1&
               -reflect_coeff*exp(-2.0_dp*prop_const(1+2*ngen,nf)*L_v(1)*1000.0_dp/2.0_dp))/&
               (1+reflect_coeff*exp(-2.0_dp*prop_const(1+2*ngen,nf)*L_v(1)*1000.0_dp/2.0_dp))
+  !write(*,*) 'no_freq: ', no_freq
+!pause
   enddo
   !Now second vein and then capillary
       if (constant_sheet_height.eqv..True.) then !! Case of constant capillary sheet height
