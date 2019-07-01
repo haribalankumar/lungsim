@@ -50,7 +50,7 @@ complex(dp), intent(out) :: Y11, Y12, Y21, Y22
 
 
 ! Local Variables:
-integer, parameter :: N_nodes = 5000
+integer, parameter :: N_nodes = 1000
 integer :: n,ldb
 integer :: iopt, info
 real(dp),  allocatable :: sparseval(:)
@@ -1452,6 +1452,7 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
   Y12 = 0.0_dp ! admittance initialisation
   Y21 = 0.0_dp ! admittance initialisation
   Y22 = 0.0_dp ! admittance initialisation
+  WRITE(*,*) 'no_freq: ', no_freq
 
   !!...  Initial guess for pressure distribution lets say all arterial pressures are the same
   !!...  and all the venous pressures are the same solution appears independent of this.
@@ -1728,31 +1729,21 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
         enddo
       else  ! Case of Non-Constant capillary sheet height
         do nf=1,no_freq
- !Sister is capillary, vessel of interest is the vein
-           sister_current=exp(-1.0_dp*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp)/&
-      exp(-1.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp)
-     reflect_coeff=(tube_admit(1+3*ngen,nf)+(2*sister_current-1)*cap_admit(1,nf)-tube_admit(1+2*ngen,nf))&
-       /(tube_admit(1+2*ngen,nf)+tube_admit(1+3*ngen,nf)+cap_admit(1,nf))
-          tube_eff_admit(1+3*ngen,nf)=tube_admit(1+3*ngen,nf)*(1&
-              -reflect_coeff*exp(-2.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp/2.0_dp))/&
-              (1+reflect_coeff*exp(-2.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp/2.0_dp))
-     !sister is the tube current is the capillary
-         omega=nf*2*PI*harmonic_scale
-         write(*,*) 'mu: ' ,cap_param%mu_c
-         write(*,*) 'K: ' ,cap_param%K_cap
-         write(*,*) 'F: ' ,cap_param%F_cap
-         write(*,*) 'alphaC: ' ,alpha_c
-         write(*,*) 'Lc: ' ,cap_param%L_c
-         write(*,*) 'H0 is: ' ,cap_param%H0
-         nd_omega = (cap_param%mu_c*cap_param%K_cap*cap_param%F_cap*omega*alpha_c*(cap_param%L_c)**2)/(cap_param%H0**3) ! Non-Dimensional Frequency
-         !write(*,*) 'Non-Dimensional Freq1: ', nd_omega
-         h_a = Hart/cap_param%H0  ! non-dimensionilising Hart
-         h_v = Hven/cap_param%H0  ! non-dimensionilising Hven
-         write(*,*) 'ha: ', h_a
-         write(*,*) 'hv: ', h_v
-         call calc_cap_admit(h_a,h_v,nd_omega,Y11,Y12,Y21,Y22) ! Non-constant capillary sheet
-         cap_eff_admit(1,nf) = Y11 - (Y12*Y21)/(Y22)
-         write(*,*) 'Cap_effective_imped1: ', cap_eff_admit(1,nf)
+          !sister is the tube current is the capillary
+            omega=nf*2*PI*harmonic_scale
+            nd_omega = (cap_param%mu_c*cap_param%K_cap*cap_param%F_cap*omega*alpha_c*(cap_param%L_c)**2)/(cap_param%H0**3) ! Non-Dimensional Frequency
+            h_a = Hart/cap_param%H0  ! non-dimensionilising Hart
+            h_v = Hven/cap_param%H0
+            call calc_cap_admit(h_a,h_v,nd_omega,Y11,Y12,Y21,Y22) ! Non-constant capillary sheet
+            cap_eff_admit(1,nf) = Y11 - (Y12*Y21)/(tube_admit(1+2*ngen,nf)+Y22)
+          !Sister is capillary, vessel of interest is the vein
+            sister_current=exp(-1.0_dp*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp)/&
+            exp(-1.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp)
+            reflect_coeff=(tube_admit(1+3*ngen,nf)+(2*sister_current-1)*cap_eff_admit(1,nf)-tube_admit(1+2*ngen,nf))&
+            /(tube_admit(1+2*ngen,nf)+tube_admit(1+3*ngen,nf)+cap_eff_admit(1,nf))
+            tube_eff_admit(1+3*ngen,nf)=tube_admit(1+3*ngen,nf)*(1&
+            -reflect_coeff*exp(-2.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp/2.0_dp))/&
+            (1+reflect_coeff*exp(-2.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp/2.0_dp))
         enddo
       endif !! Case of capillary sheet height end for first generation
   do gen=2,cap_param%num_symm_gen-1
@@ -1784,36 +1775,26 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
       else  ! Case of Non-Constant capillary sheet height
         do nf =1,no_freq
       !Next two vessels are identical
-      reflect_coeff=(2*tube_admit(gen+2*ngen,nf)-tube_admit(gen+2*ngen-1,nf))&
-        /(tube_admit(gen+2*ngen-1,nf)+2*tube_admit(gen+2*ngen,nf))
-       tube_eff_admit(gen+2*ngen,nf)=tube_admit(gen+2*ngen,nf)*(1&
-              -reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))/&
-              (1+reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))
+          reflect_coeff=(2*tube_admit(gen+2*ngen,nf)-tube_admit(gen+2*ngen-1,nf))&
+          /(tube_admit(gen+2*ngen-1,nf)+2*tube_admit(gen+2*ngen,nf))
+          tube_eff_admit(gen+2*ngen,nf)=tube_admit(gen+2*ngen,nf)*(1&
+          -reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))/&
+          (1+reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))
       !Next up a vein plus a capillary
-      sister_current=exp(-1.0_dp*prop_const_cap(gen,nf)*cap_param%L_c*1000.0_dp)/&
-        exp(-1.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp)
-      reflect_coeff=(tube_admit(gen+3*ngen,nf)+(2*sister_current-1)*cap_admit(gen,nf)-tube_admit(gen+2*ngen,nf))&
-        /(tube_admit(gen+2*ngen,nf)+tube_admit(gen+3*ngen,nf)+cap_admit(gen,nf))
-      tube_eff_admit(gen+3*ngen,nf)=tube_admit(gen+3*ngen,nf)*(1&
-              -reflect_coeff*exp(-2.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))/&
-              (1+reflect_coeff*exp(-2.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))
+          sister_current=exp(-1.0_dp*prop_const_cap(gen,nf)*cap_param%L_c*1000.0_dp)/&
+          exp(-1.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp)
+          reflect_coeff=(tube_admit(gen+3*ngen,nf)+(2*sister_current-1)*cap_admit(gen,nf)-tube_admit(gen+2*ngen,nf))&
+          /(tube_admit(gen+2*ngen,nf)+tube_admit(gen+3*ngen,nf)+cap_admit(gen,nf))
+          tube_eff_admit(gen+3*ngen,nf)=tube_admit(gen+3*ngen,nf)*(1&
+          -reflect_coeff*exp(-2.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))/&
+          (1+reflect_coeff*exp(-2.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))
       !sister is the tube current is the capillary
          omega=nf*2*PI*harmonic_scale
-         write(*,*) 'mu: ' ,cap_param%mu_c
-         write(*,*) 'K: ' ,cap_param%K_cap
-         write(*,*) 'F: ' ,cap_param%F_cap
-         write(*,*) 'alphaC: ' ,alpha_c
-         write(*,*) 'Lc: ' ,cap_param%L_c
-         write(*,*) 'H0 is: ' ,cap_param%H0
          nd_omega = (cap_param%mu_c*cap_param%K_cap*cap_param%F_cap*omega*alpha_c*(cap_param%L_c)**2)/(cap_param%H0**3) ! Non-Dimensional Frequency
-         !write(*,*) 'Non-Dimensional Freq: ', nd_omega
          h_a = Hart/cap_param%H0  ! non-dimensionilising Hart
          h_v = Hven/cap_param%H0  ! non-dimensionilising Hven
-         write(*,*) 'ha: ', h_a
-         write(*,*) 'hv: ', h_v
          call calc_cap_admit(h_a,h_v,nd_omega,Y11,Y12,Y21,Y22) ! Non-constant capillary sheet
-         cap_eff_admit(gen,nf) = Y11 - (Y12*Y21)/(Y22)
-         write(*,*) 'Cap_effective_imped2: ', cap_eff_admit(gen,nf)
+         cap_eff_admit(gen,nf) = Y11 - (Y12*Y21)/(tube_admit(1+2*ngen,nf)+Y22)
         enddo
       endif
   enddo
@@ -1832,21 +1813,11 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
       else  ! Case of Non-Constant capillary sheet height
         do nf=1,no_freq
          omega=nf*2*PI*harmonic_scale
-         write(*,*) 'mu: ' ,cap_param%mu_c
-         write(*,*) 'K: ' ,cap_param%K_cap
-         write(*,*) 'F: ' ,cap_param%F_cap
-         write(*,*) 'alphaC: ' ,alpha_c
-         write(*,*) 'Lc: ' ,cap_param%L_c
-         write(*,*) 'H0 is: ' ,cap_param%H0
          nd_omega = (cap_param%mu_c*cap_param%K_cap*cap_param%F_cap*omega*alpha_c*(cap_param%L_c)**2)/(cap_param%H0**3) ! Non-Dimensional Frequency
-         !write(*,*) 'Non-Dimensional Freq: ', nd_omega
          h_a = Hart/cap_param%H0  ! non-dimensionilising Hart
          h_v = Hven/cap_param%H0  ! non-dimensionilising Hven
-         write(*,*) 'ha: ', h_a
-         write(*,*) 'hv: ', h_v
          call calc_cap_admit(h_a,h_v,nd_omega,Y11,Y12,Y21,Y22) ! Non-constant capillary sheet
-         cap_eff_admit(cap_param%num_symm_gen,nf) = Y11 - (Y12*Y21)/(Y22)
-         write(*,*) 'Cap_effective_imped3: ', cap_eff_admit(cap_param%num_symm_gen,nf)
+         cap_eff_admit(cap_param%num_symm_gen,nf) = Y11 - (Y12*Y21)/(tube_admit(gen+3*ngen,nf)+Y22)
         enddo
       endif
   !now calculate effective admittance up the arteriole side of the tree
