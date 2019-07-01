@@ -50,7 +50,7 @@ complex(dp), intent(out) :: Y11, Y12, Y21, Y22
 
 
 ! Local Variables:
-integer, parameter :: N_nodes = 1000
+integer, parameter :: N_nodes = 5000
 integer :: n,ldb
 integer :: iopt, info
 real(dp),  allocatable :: sparseval(:)
