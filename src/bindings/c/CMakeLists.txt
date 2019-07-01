@@ -3,7 +3,6 @@ project(AetherCBindings LANGUAGES C Fortran)
 
 set(C_FORTRAN_LIB_SRCS
     arrays.f90
-    capillaryflow.f90
     diagnostics.f90
     exports.f90
     filenames.f90
@@ -18,10 +17,10 @@ set(C_FORTRAN_LIB_SRCS
     species_transport.f90
     utils.f90
     ventilation.f90
+    wave_transmission.f90
 )
 set(C_C_LIB_SRCS
     arrays.c
-    capillaryflow.c
     diagnostics.c
     exports.c
     filenames.c
@@ -36,12 +35,12 @@ set(C_C_LIB_SRCS
     species_transport.c
     utils.c
     ventilation.c
+    wave_transmission.c
 )
 
 set(C_LIB_HDRS
   symbol_export.h
   arrays.h
-  capillaryflow.h
   diagnostics.h
   exports.h
   filenames.h
@@ -56,6 +55,7 @@ set(C_LIB_HDRS
   species_transport.h
   utils.h
   ventilation.h
+  wave_transmission.h
 )
 
 add_library(aether_c_fortran STATIC ${C_FORTRAN_LIB_SRCS} $<TARGET_OBJECTS:aether_obj>)

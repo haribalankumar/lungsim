@@ -24,7 +24,6 @@ endif()
 
 set(INTERFACE_SRCS
   ../interface/arrays.i
-  ../interface/capillaryflow.i
   ../interface/diagnostics.i
   ../interface/exports.i
   ../interface/filenames.i
@@ -38,6 +37,7 @@ set(INTERFACE_SRCS
   ../interface/pressure_resistance_flow.i
   ../interface/species_transport.i
   ../interface/ventilation.i
+  ../interface/wave_transmission.i
 )
 include_directories(${PYTHON_INCLUDE_DIRS} ${NUMPY_INCLUDE_DIRS} ${CMAKE_CURRENT_SOURCE_DIR}/../c)
 

@@ -1,17 +1,18 @@
+
 /*
- * -- SuperLU routine (version 5.0) --
+ * -- SuperLU routine (version 3.0) --
  * Univ. of California Berkeley, Xerox Palo Alto Research Center,
  * and Lawrence Berkeley National Lab.
  * October 15, 2003
  *
  */
 
-#include "slu_ddefs.h"
+#include "slu_cdefs.h"
 
 #define HANDLE_SIZE  8
-
-/* kind of integer to hold a pointer.  Use 64-bit. */
-typedef long long int fptr;
+/* kind of integer to hold a pointer.  Use int.
+   This might need to be changed on 64-bit systems. */
+typedef int fptr;  /* 32-bit by default */
 
 typedef struct {
     SuperMatrix *L;
@@ -21,9 +22,9 @@ typedef struct {
 } factors_t;
 
 void
-c_fortran_dgssv_(int *iopt, int *n, int *nnz, int *nrhs, 
-                 double *values, int *rowind, int *colptr,
-                 double *b, int *ldb,
+c_fortran_cgssv_(int *iopt, int *n, int *nnz, int *nrhs, 
+                 complex *values, int *rowind, int *colptr,
+                 complex *b, int *ldb,
 		 fptr *f_factors, /* a handle containing the address
 				     pointing to the factored matrices */
 		 int *info)
@@ -58,9 +59,6 @@ c_fortran_dgssv_(int *iopt, int *n, int *nnz, int *nrhs,
     superlu_options_t options;
     SuperLUStat_t stat;
     factors_t *LUfactors;
-    GlobalLU_t Glu;   /* Not needed on return. */
-    int    *rowind0;  /* counter 1-based indexing from Frotran arrays. */
-    int    *colptr0;  
 
     trans = NOTRANS;
 
@@ -72,15 +70,12 @@ c_fortran_dgssv_(int *iopt, int *n, int *nnz, int *nrhs,
 	/* Initialize the statistics variables. */
 	StatInit(&stat);
 
-
 	/* Adjust to 0-based indexing */
-	if ( !(rowind0 = intMalloc(*nnz)) ) ABORT("Malloc fails for rowind0[].");
-	if ( !(colptr0 = intMalloc(*n+1)) ) ABORT("Malloc fails for colptr0[].");
-	for (i = 0; i < *nnz; ++i) rowind0[i] = rowind[i] - 1;
-	for (i = 0; i <= *n; ++i) colptr0[i] = colptr[i] - 1;
+	for (i = 0; i < *nnz; ++i) --rowind[i];
+	for (i = 0; i <= *n; ++i) --colptr[i];
 
-	dCreate_CompCol_Matrix(&A, *n, *n, *nnz, values, rowind0, colptr0,
-			       SLU_NC, SLU_D, SLU_GE);
+	cCreate_CompCol_Matrix(&A, *n, *n, *nnz, values, rowind, colptr,
+			       SLU_NC, SLU_C, SLU_GE);
 	L = (SuperMatrix *) SUPERLU_MALLOC( sizeof(SuperMatrix) );
 	U = (SuperMatrix *) SUPERLU_MALLOC( sizeof(SuperMatrix) );
 	if ( !(perm_r = intMalloc(*n)) ) ABORT("Malloc fails for perm_r[].");
@@ -102,27 +97,31 @@ c_fortran_dgssv_(int *iopt, int *n, int *nnz, int *nrhs,
 	panel_size = sp_ienv(1);
 	relax = sp_ienv(2);
 
-	dgstrf(&options, &AC, relax, panel_size, etree,
+	cgstrf(&options, &AC, relax, panel_size, etree,
                 NULL, 0, perm_c, perm_r, L, U, &stat, info);
 
 	if ( *info == 0 ) {
 	    Lstore = (SCformat *) L->Store;
 	    Ustore = (NCformat *) U->Store;
-	    //printf("No of nonzeros in factor L = %d\n", Lstore->nnz); 
-	    //printf("No of nonzeros in factor U = %d\n", Ustore->nnz);
-	    //printf("No of nonzeros in L+U = %d\n", Lstore->nnz + Ustore->nnz);
-	    dQuerySpace(L, U, &mem_usage);
-	    //printf("L\\U MB %.3f\ttotal MB needed %.3f\n",
-		   //mem_usage.for_lu/1e6, mem_usage.total_needed/1e6);
+	    printf("No of nonzeros in factor L = %d\n", Lstore->nnz);
+	    printf("No of nonzeros in factor U = %d\n", Ustore->nnz);
+	    printf("No of nonzeros in L+U = %d\n", Lstore->nnz + Ustore->nnz);
+	    cQuerySpace(L, U, &mem_usage);
+	    printf("L\\U MB %.3f\ttotal MB needed %.3f\n",
+		   mem_usage.for_lu/1e6, mem_usage.total_needed/1e6);
 	} else {
-	    //printf("dgstrf() error returns INFO= %d\n", *info);
+	    printf("cgstrf() error returns INFO= %d\n", *info);
 	    if ( *info <= *n ) { /* factorization completes */
-		dQuerySpace(L, U, &mem_usage);
-		//printf("L\\U MB %.3f\ttotal MB needed %.3f\n",
-		  //     mem_usage.for_lu/1e6, mem_usage.total_needed/1e6);
+		cQuerySpace(L, U, &mem_usage);
+		printf("L\\U MB %.3f\ttotal MB needed %.3f\n",
+		       mem_usage.for_lu/1e6, mem_usage.total_needed/1e6);
 	    }
 	}
 	
+	/* Restore to 1-based indexing */
+	for (i = 0; i < *nnz; ++i) ++rowind[i];
+	for (i = 0; i <= *n; ++i) ++colptr[i];
+
 	/* Save the LU factors in the factors handle */
 	LUfactors = (factors_t*) SUPERLU_MALLOC(sizeof(factors_t));
 	LUfactors->L = L;
@@ -135,8 +134,6 @@ c_fortran_dgssv_(int *iopt, int *n, int *nnz, int *nrhs,
 	SUPERLU_FREE(etree);
 	Destroy_SuperMatrix_Store(&A);
 	Destroy_CompCol_Permuted(&AC);
-	SUPERLU_FREE(rowind0);
-	SUPERLU_FREE(colptr0);
 	StatFree(&stat);
 
     } else if ( *iopt == 2 ) { /* Triangular solve */
@@ -150,10 +147,10 @@ c_fortran_dgssv_(int *iopt, int *n, int *nnz, int *nrhs,
 	perm_c = LUfactors->perm_c;
 	perm_r = LUfactors->perm_r;
 
-	dCreate_Dense_Matrix(&B, *n, *nrhs, b, *ldb, SLU_DN, SLU_D, SLU_GE);
+	cCreate_Dense_Matrix(&B, *n, *nrhs, b, *ldb, SLU_DN, SLU_C, SLU_GE);
 
         /* Solve the system A*X=B, overwriting B with X. */
-        dgstrs (trans, L, U, perm_c, perm_r, &B, &stat, info);
+        cgstrs (trans, L, U, perm_c, perm_r, &B, &stat, info);
 
 	Destroy_SuperMatrix_Store(&B);
 	StatFree(&stat);
@@ -169,7 +166,7 @@ c_fortran_dgssv_(int *iopt, int *n, int *nnz, int *nrhs,
         SUPERLU_FREE (LUfactors->U);
 	SUPERLU_FREE (LUfactors);
     } else {
-	fprintf(stderr,"Invalid iopt=%d passed to c_fortran_dgssv()\n",*iopt);
+	fprintf(stderr,"Invalid iopt=%d passed to c_fortran_cgssv()\n",*iopt);
 	exit(-1);
     }
 }

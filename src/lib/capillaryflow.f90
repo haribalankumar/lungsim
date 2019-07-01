@@ -21,8 +21,7 @@ module capillaryflow
 
   !Interfaces
   private
-  public cap_flow_ladder,cap_flow_admit,calc_cap_imped
-
+  public cap_flow_ladder,cap_flow_admit
   
 contains
 
@@ -30,15 +29,16 @@ contains
 !################################################################
 !
 
-subroutine calc_cap_imped(ha,hv,omega)
-! Calculating the impedance through this subroutine.
-! Used by wave transmission model to solve the time dependent capillary sheet impedance.
+subroutine calc_cap_admit(ha,hv,omega,Y11,Y12,Y21,Y22)
+! Calculating the admittance components for non-constant sheet height
+! Used by cap_flow_admit to solve the time dependent capillary sheet impedance.
 !    Inputs:
 !           1- ha: Non-dimentional sheet height at arterial side of the capillary
 !           2- hv: Non-dimentional sheet height at venous side of the capillary
 !           3- omega: Dimensionless oscillatory frequency
 !    Output:
 !           1- As of now it will print out the constants from Fung's paper (Pulmonary microvascular impedance-1972) 
+!           2- Two port network capillary input admittance components
 
 
 use diagnostics, only: enter_exit
@@ -46,9 +46,11 @@ use arrays, only:dp
 
 ! Parameters:
 real(dp), intent(in) :: ha,hv,omega
+complex(dp), intent(out) :: Y11, Y12, Y21, Y22
+
 
 ! Local Variables:
-integer, parameter :: N_nodes = 5000
+integer, parameter :: N_nodes = 1000
 integer :: n,ldb
 integer :: iopt, info
 real(dp),  allocatable :: sparseval(:)
@@ -61,9 +63,10 @@ integer :: i
 integer :: factors(8)
 integer :: NonZeros
 character(len=60) :: sub_name
+complex(dp) :: C1,C2,C3,C4
 
     
-sub_name = 'calc_cap_imped'
+sub_name = 'calc_cap_admit'
 call enter_exit(sub_name,1)
 
 
@@ -74,13 +77,15 @@ h(2) = (ha**4 - 2*rep*dx)**(0.75)
 h(3) = (ha**4 - (N_nodes-1)*rep*dx)**(0.75)
 h(4) = (ha**4 - (N_nodes-2)*rep*dx)**(0.75)
 h(5) = (ha**4 - (N_nodes-3)*rep*dx)**(0.75)
-
+Y11 = 0 ! admittance initialisation
+Y12 = 0 ! admittance initialisation
+Y21 = 0 ! admittance initialisation
+Y22 = 0 ! admittance initialisation
 n = N_Nodes*2 + 2
 call Matrix(N_nodes, ha, hv, omega, stiff1, stiff2, RHS1, RHS2)
 call Mat_to_CC(stiff1,N_nodes,sparsecol,sparserow,sparseval,NonZeros)
  nrhs = 1
   ldb = n
-
 
 !
 !  Factor the matrix.
@@ -89,14 +94,6 @@ call Mat_to_CC(stiff1,N_nodes,sparsecol,sparserow,sparseval,NonZeros)
   call c_fortran_dgssv ( iopt, n, NonZeros, nrhs, sparseval, sparserow, &
     sparsecol, RHS1, ldb, factors, info )
 
-  if ( info /= 0 ) then
-    write ( *, '(a)' ) ' '
-    write ( *, '(a)' ) '  Factorization failed'
-    write ( *, '(a,i4)' ) '  INFO = ', info
-    stop 1
-  end if
-  write ( *, '(a)' ) '  Factorization succeeded.'
-
 !
 !  Solve the factored system.
 !
@@ -104,24 +101,12 @@ call Mat_to_CC(stiff1,N_nodes,sparsecol,sparserow,sparseval,NonZeros)
   call c_fortran_dgssv ( iopt, n, NonZeros, nrhs, sparseval, sparserow, &
     sparsecol, RHS1, ldb, factors, info )
 
-  if ( info /= 0 ) then
-    write ( *, '(a)' ) ' '
-    write ( *, '(a)' ) 'C_SAMPLE - Fatal error!'
-    write ( *, '(a)' ) '  Backsolve failed'
-    write ( *, '(a,i4)' ) '  INFO = ', info
-    stop 1
-  end if
-
-  write ( *, '(a)' ) ' '
-  write ( *, '(a)' ) '  Computed solution:'
-  write ( *, '(a)' ) ' '
-
-write (*,*) 'C_1 = ',RHS1(2),'+ i(',RHS1(N_Nodes+2),')'
+!write (*,*) 'C_1 = ',RHS1(2),'+ i(',RHS1(N_Nodes+2),')'
+ C1 = RHS1(2) + RHS1(N_Nodes+2)*cmplx(0.0_dp,1.0_dp,8)
 deriv1(1) = (h(2)*RHS1(3) - h(1)*RHS1(1))/(2*dx)
-!c3 = (h(3) * H1R(3) - h(1) * H1R(1))/(2*dx);
-!c4 = (h(3) * H1I(3) - h(1) * H1I(1))/(2*dx);
 deriv1(2) = (h(2)*RHS1(N_nodes+4) - h(1)*RHS1(N_Nodes+2))/(2*dx)
-write (*,*) 'C_2 = ',deriv1(1),'+ i(',deriv1(2),')'
+!write (*,*) 'C_2 = ',deriv1(1),'+ i(',deriv1(2),')'
+ C2 = deriv1(1) + deriv1(2)*cmplx(0.0_dp,1.0_dp,8)
 
 !
 !  Free memory.
@@ -132,10 +117,6 @@ write (*,*) 'C_2 = ',deriv1(1),'+ i(',deriv1(2),')'
 !
 !  Terminate.
 !
-  write ( *, '(a)' ) ' '
-  write ( *, '(a)' ) 'D_SAMPLE:'
-  write ( *, '(a)' ) '  Normal end of execution.'
-  write ( *, '(a)' ) ''
 
 call Mat_to_CC(stiff2,N_nodes,sparsecol,sparserow,sparseval,NonZeros)
  nrhs = 1
@@ -148,14 +129,6 @@ call Mat_to_CC(stiff2,N_nodes,sparsecol,sparserow,sparseval,NonZeros)
   call c_fortran_dgssv ( iopt, n, NonZeros, nrhs, sparseval, sparserow, &
     sparsecol, RHS2, ldb, factors, info )
 
-  if ( info /= 0 ) then
-    write ( *, '(a)' ) ' '
-    write ( *, '(a)' ) '  Factorization failed'
-    write ( *, '(a,i4)' ) '  INFO = ', info
-    stop 1
-  end if
-  write ( *, '(a)' ) '  Factorization succeeded.'
-
 !
 !  Solve the factored system.
 !
@@ -163,24 +136,12 @@ call Mat_to_CC(stiff2,N_nodes,sparsecol,sparserow,sparseval,NonZeros)
   call c_fortran_dgssv ( iopt, n, NonZeros, nrhs, sparseval, sparserow, &
     sparsecol, RHS2, ldb, factors, info )
 
-  if ( info /= 0 ) then
-    write ( *, '(a)' ) ' '
-    write ( *, '(a)' ) 'C_SAMPLE - Fatal error!'
-    write ( *, '(a)' ) '  Backsolve failed'
-    write ( *, '(a,i4)' ) '  INFO = ', info
-    stop 1
-  end if
-
-  write ( *, '(a)' ) ' '
-  write ( *, '(a)' ) '  Computed solution:'
-  write ( *, '(a)' ) ' '
-
-write (*,*) 'C_3 = ',RHS2(N_Nodes+1),'+ i(',RHS2(2*N_Nodes+2),')'
+!write (*,*) 'C_3 = ',RHS2(N_Nodes+1),'+ i(',RHS2(2*N_Nodes+2),')'
+ C3 = RHS2(N_Nodes+1) + RHS2(2*N_Nodes+2)*cmplx(0.0_dp,1.0_dp,8)
 deriv2(1) = (3*h(3)*RHS2(N_nodes+1) - 4*h(4)*RHS2(N_nodes) + h(5)*RHS2(N_nodes-1))/(2*dx)
-!c3 = (h(nn+1) * H2R(nn) - h(3) * H2R(nn-2))/(2*dx);
-!c4 = (h(nn) * H2I(nn) - h(nn-2) * H2I(nn-2))/(2*dx);
 deriv2(2) = (3*h(3)*RHS2(2*N_nodes+2) - 4*h(4)*RHS2(2*N_nodes+1) + h(5)*RHS2(2*N_nodes))/(2*dx)
-write (*,*) 'C_4 = ',deriv2(1),'+ i(',deriv2(2),')'
+!write (*,*) 'C_4 = ',deriv2(1),'+ i(',deriv2(2),')'
+ C4 = deriv2(1) + deriv2(2)*cmplx(0.0_dp,1.0_dp,8)
 
 !
 !  Free memory.
@@ -191,14 +152,17 @@ write (*,*) 'C_4 = ',deriv2(1),'+ i(',deriv2(2),')'
 !
 !  Terminate.
 !
-  write ( *, '(a)' ) ' '
-  write ( *, '(a)' ) 'D_SAMPLE:'
-  write ( *, '(a)' ) '  Normal end of execution.'
-  write ( *, '(a)' ) ''
 
+Y11 = -C2/C1
+Y12 = 1.0/C3
+Y21 = 1.0/C1
+Y22 = -C4/C3
+!write(*,*) '=================================================='
+!write(*,*) 'C1: ', C1*C2
+!write(*,*) 'IMPEDANCE: ', Y11 - (Y12*Y21)/(Y22)
 call enter_exit(sub_name,2)
 
-end subroutine calc_cap_imped
+end subroutine calc_cap_admit
 !
 !###################################################################################
 !
@@ -551,7 +515,7 @@ end subroutine Mat_to_CSR
       OUTPUT_PERFUSION)
     use diagnostics, only: enter_exit
     use solve, only: pmgmres_ilu_cr
-    use arrays, only:dp,capillary_bf_parameters
+    use arrays, only:dp,capillary_bf_parameters,elem_cnct
 
     type(capillary_bf_parameters) :: cap_param
 
@@ -1281,7 +1245,8 @@ write(*,*) 'parameters are: ', P_a , cap_param%Palv, cap_param%Pub_c, P_v, cap_p
 !
 subroutine cap_specific_parameters(ne,Ppl,alpha_c,area_scale,length_scale,l_a,rad_a,l_v,rad_v,ngen,&
     mu_app,R_in,R_out,L_in,L_out)
-    use arrays, only: dp
+    use indices, only: ne_length
+    use arrays, only: dp,elem_field
     use diagnostics, only: enter_exit
     use arrays, only:dp,capillary_bf_parameters
 
@@ -1323,8 +1288,7 @@ subroutine cap_specific_parameters(ne,Ppl,alpha_c,area_scale,length_scale,l_a,ra
 
 !    --ARTERIOLE AND VENULE PROPERTIES--
 !###  APPARENT BLOOD VISCOSITY:
-!...  Stepping down linearly with each generation from Fung's
-!...  estimate at 45% hematocrit (4e-3Pa.s) to his estimate at 30% hematocrit
+!...  Stepping down linearly with each generation from the larger vessels to (4e-3Pa.s) to his estimate at 30% hematocrit
 !...  (1.92e-3Pa.s). (Biomechanics: Circulation)
       DO i=1,cap_param%num_symm_gen
          mu_app(i)=(4.0e-3_dp-(i-1)*(4.0e-3_dp-1.92e-3_dp)/(cap_param%num_symm_gen-1));
@@ -1346,9 +1310,596 @@ subroutine cap_specific_parameters(ne,Ppl,alpha_c,area_scale,length_scale,l_a,ra
       ENDDO
       cap_param%alpha_a=R_in/(6670.0_dp)
       cap_param%alpha_v=R_out/(6670.0_dp)
+      !store element length
+      elem_field(ne_length,ne)=L_a(1)*1000.0_dp
 
     call enter_exit(sub_name,2)
 end subroutine cap_specific_parameters
+!
+!################################################
+!
+subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
+  Ppl,Q01,Rin,Rout,x_cap,y_cap,z_cap,no_freq,harmonic_scale,elast_param,constant_sheet_height)
 
+  use arrays, only: dp,capillary_bf_parameters,elasticity_param,num_units
+  use solve, only: pmgmres_ilu_cr
+  use other_consts, only:PI
+  use diagnostics, only: enter_exit
+  use arrays, only:dp,capillary_bf_parameters,fluid_properties
+  use math_utilities, only: bessel_complex
+
+  integer,intent(in) :: ne
+  integer,intent(in) :: no_freq
+  complex(dp), intent(inout) :: admit(no_freq)
+  complex(dp), intent(in) :: eff_admit_downstream(no_freq)
+  real(dp), intent(inout) ::Lin,Lout,P1,P2,Ppl,Q01,Rin,Rout,x_cap,y_cap,z_cap
+  real(dp), intent(in) :: harmonic_scale
+  logical, intent(in) :: constant_sheet_height
+
+  type(elasticity_param) :: elast_param
+
+  type(capillary_bf_parameters) :: cap_param
+  type(fluid_properties) :: fp
+  integer :: ngen
+  real(dp) :: alpha_c,area_scale,length_scale
+  real(dp) :: radupdate,P_exta,P_extv,R_art1,R_ven1,R_art2,R_ven2,Q01_mthrees,Pin,Pout
+  integer :: gen
+  real(dp) :: SHEET_RES,Q_c,Hart,Hven,RBC_TT,area,area_new,recruited,omega,nd_omega,h_a,h_v
+  integer :: zone,nf
+  complex(dp) :: bessel0,bessel1,f10,Gamma_sheet
+  real(dp) :: wolmer,wavespeed
+  integer :: i,iter,j,num_sheet
+  integer, allocatable :: SparseCol(:)
+  integer, allocatable ::SparseRow(:)
+  real(dp) :: ErrorEstimate,Pin_SHEET,Pout_SHEET
+  real(dp), allocatable :: Pressure(:)
+  real(dp) ::  Qtot,Qgen
+  real(dp),allocatable :: Q_sheet(:)
+  real(dp),allocatable :: RHS(:)
+  real(dp) :: Rtot
+  real(dp),allocatable :: Solution(:)
+  real(dp),allocatable :: SolutionLast(:)
+  real(dp),allocatable :: SparseVal(:)
+  real(dp) :: TOTAL_CAP_VOL,TOTAL_SHEET_H,TOTAL_SHEET_SA,&
+         TT_TOTAL,R_upstream,R_downstream
+  real(dp),allocatable :: l_a(:),rad_a(:),l_v(:),rad_v(:),mu_app(:)
+  integer :: MatrixSize,NonZeros,submatrixsize
+  real(dp) :: sheet_number
+  integer SOLVER_FLAG
+  real(dp) :: start, finish
+
+  complex(dp), allocatable :: cap_admit(:,:)
+  complex(dp), allocatable :: tube_admit(:,:)
+  complex(dp), allocatable :: cap_eff_admit(:,:)
+  complex(dp), allocatable :: tube_eff_admit(:,:)
+  complex(dp), allocatable :: prop_const(:,:)
+  complex(dp), allocatable :: prop_const_cap(:,:)
+
+  complex(dp) :: daughter_admit,sister_admit,reflect_coeff,sister_current
+  complex(dp) :: Y11,Y12,Y21,Y22
+
+
+  character(len=60) :: sub_name
+  integer :: AllocateStatus
+
+  sub_name = 'cap_flow_admit'
+  call enter_exit(sub_name,1)
+
+  !     Number of non-zero entries in solution matrix.
+  NonZeros=3
+  do i=2,cap_param%num_symm_gen
+      NonZeros=NonZeros+4*i+10
+  enddo
+  !     The size of the solution matrix (number of unknown pressures and flows)
+  MatrixSize=5*cap_param%num_symm_gen-3
+  !!     The number of unknown pressures
+  submatrixsize=4*cap_param%num_symm_gen-4
+  ngen=cap_param%num_symm_gen
+
+  !...  ---INITIALISATION
+  !...  The input Q01 gives us an estimate for flow into the acinus from the large
+  !...  vessel model.
+  !...  This is in mm^3/s and needs to be converted to m^3/s to use in calculating
+  !...  arteriole and venule resistance
+  Q01_mthrees=Q01/1.d9 !mm3/s->m3/s
+  Pin = P1
+  Pout = P2
+  !     Sheet area (unscaled):
+  !...  We define a sheet area for input into the capillary model.
+  !...  This area is at full inflation and will be scaled within CAP_FLOW_SHEET
+  !...  Area of an individual sheet
+  sheet_number=0
+  DO i=1,cap_param%num_symm_gen
+      sheet_number=sheet_number+2.d0**i
+  ENDDO
+  area=cap_param%total_cap_area/(sheet_number*num_units) !m^2
+  ngen=cap_param%num_symm_gen
+  !1. need to resolve the micro-unit flow to get correct pressure and flow in each unit
+  allocate (Pressure(submatrixsize), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array Press ***"
+  allocate (SparseCol(NonZeros), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array SparseCol***"
+  allocate (SparseVal(NonZeros), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array  SParseVal***"
+  allocate (SparseRow(MatrixSize+1), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array SparseRow ***"
+  allocate (Solution(MatrixSize), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array Solution ***"
+  allocate (SolutionLast(MatrixSize), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array SolutionLast***"
+  allocate (RHS(MatrixSize), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array RHS***"
+  allocate (l_a(ngen), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array l_a***"
+  allocate (rad_a(ngen), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array rad_a***"
+  allocate (l_v(ngen), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array l_v ***"
+  allocate (rad_v(ngen), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array rad_v ***"
+  allocate (Q_Sheet(ngen), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array Q_sheet***"
+  allocate (mu_app(ngen), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for solver_solution array mu_app***"
+
+  Pressure=0.0_dp
+  SparseCol=0
+  SparseRow=0
+  SparseVal=0.0_dp
+  Solution=0.0_dp
+  SolutionLast=0.0_dp
+  Y11 = 0.0_dp ! admittance initialisation
+  Y12 = 0.0_dp ! admittance initialisation
+  Y21 = 0.0_dp ! admittance initialisation
+  Y22 = 0.0_dp ! admittance initialisation
+ 
+  !!...  Initial guess for pressure distribution lets say all arterial pressures are the same
+  !!...  and all the venous pressures are the same solution appears independent of this.
+  DO i=1,cap_param%num_symm_gen-1
+      Pressure(4*i-3)=1000.0_dp ! Pa
+      Pressure(4*i-2)=1000.0_dp
+      Pressure(4*i-1)=100.0_dp
+      Pressure(4*i)=100.0_dp
+  ENDDO
+
+
+  !###  INITIAL SOLUTION GUESS
+  DO i=1,submatrixsize
+      solution(i)=Pressure(i)
+  ENDDO
+  DO i=submatrixsize+1,matrixSize-1
+      solution(i)=Q01_mthrees/2**cap_param%num_symm_gen
+  ENDDO
+  Solution(Matrixsize)=Q01_mthrees
+  !###  INITIALISE SOLUTIONLAST
+  DO j=1,MatrixSize
+      SolutionLast(j)=Solution(j)
+  ENDDO
+
+  !### INPUT TO THE LADDER MODEL THAT IS INDEPENDENT OF ITERATION
+  CALL LADDERSOL_MATRIX(NonZeros,MatrixSize,submatrixsize,&
+      SparseCol,SparseRow,SparseVal,RHS,Pin,Pout)
+
+  CALL cap_specific_parameters(ne,Ppl,alpha_c,area_scale,length_scale,l_a,rad_a,l_v,rad_v,ngen,&
+      mu_app,Rin,Rout,Lin,Lout)
+  !### ITERATIVE LOOP
+  iter=0
+  ErrorEstimate=1.d10
+  DO WHILE(ErrorEstimate.GT.1.0d-9.AND.iter.LT.100)
+      iter=iter+1
+      !...  CALCULATE RESISTANCE GIVEN CURRENT PRESSURE AND FLOW - THEN UPDATE
+      !...  SparseVal- THese are the only elements of the solution matrix that need
+      !.... iteratively updating
+
+      CALL POPULATE_MATRIX_LADDER(ne,NonZeros,submatrixsize,ngen,area,alpha_c,&
+          area_scale,length_scale,mu_app,Ppl,Pin,Pout,Pressure,&
+          Q01_mthrees,Q_sheet,SparseVal,l_a,rad_a,l_v,rad_v)
+
+
+      call pmgmres_ilu_cr(MatrixSize, NonZeros, SparseRow, SparseCol, SparseVal, &
+          Solution, RHS, 500, 500,1.d-5,1.d-4,SOLVER_FLAG)
+
+
+      DO j=1,submatrixsize
+          Pressure(j)=Solution(j)
+      ENDDO
+      Q01_mthrees=Solution(MatrixSize)
+      !     Estimating Error in solution
+      ErrorEstimate=0.d0
+      DO i=1,MatrixSize
+          ErrorEstimate=ErrorEstimate+&
+              DABS((Solution(i)-SolutionLast(i))**2.d0&
+              /Solution(i)**2.d0)
+          SolutionLast(i)=Solution(i)
+      ENDDO
+      ErrorEstimate=ErrorEstimate/MatrixSize
+
+  ENDDO
+
+  Qtot=0
+  Do i=1,cap_param%num_symm_gen
+     Qtot=Qtot+Q_sheet(i)*2.d0**i
+  ENDDO
+
+  deallocate (SparseCol, STAT = AllocateStatus)
+  deallocate (SparseRow, STAT = AllocateStatus)
+  deallocate (SparseRow, STAT = AllocateStatus)
+  deallocate (Solution, STAT = AllocateStatus)
+  deallocate (SolutionLast, STAT = AllocateStatus)
+  deallocate (RHS, STAT = AllocateStatus)
+
+  allocate (cap_admit(ngen,no_freq), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for cap_admit ***"
+  allocate(tube_admit(4*ngen,no_freq), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for tube_admit ***"
+  allocate (cap_eff_admit(ngen,no_freq), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for cap_eff_admit ***"
+  allocate(tube_eff_admit(4*ngen,no_freq), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for tube_eff_admit ***"
+  allocate(prop_const(4*ngen,no_freq), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for prop_const ***"
+  allocate(prop_const_cap(ngen,no_freq), STAT = AllocateStatus)
+  if (AllocateStatus /= 0) STOP "*** Not enough memory for prop_const_cap ***"
+
+
+
+  cap_admit=cmplx(0.0_dp,0.0_dp,8) !initialise
+  tube_admit=cmplx(0.0_dp,0.0_dp,8) !initialise
+  cap_eff_admit=cmplx(0.0_dp,0.0_dp,8) !initialise
+  tube_eff_admit=cmplx(0.0_dp,0.0_dp,8) !initialise
+  prop_const=cmplx(0.0_dp,0.0_dp,8) !initialise
+  prop_const_cap=cmplx(0.0_dp,0.0_dp,8) !initialise
+
+
+  radupdate=0.d0
+  do gen=1,cap_param%num_symm_gen-1
+    Q01_mthrees=Qtot/2.0_dp
+!!...    FIRST HALF OF ARTERIOLE
+    if(rad_a(gen).LT.100.d-6) then
+      P_exta=cap_param%Palv ! From Yen Alveolar pressure dominates vessels <200um diam
+    else
+      P_exta=-Ppl
+    endif
+    if ((Pin-P_exta).LE.cap_param%Pub_a_v)THEN
+      radupdate=rad_a(gen)+cap_param%alpha_a*(Pin-P_exta)*&
+         (gen-cap_param%num_symm_gen)/(1.d0-cap_param%num_symm_gen)+alpha_c*(1-gen)*&
+         (Pin-P_exta)/(2.d0-2.d0*cap_param%num_symm_gen)
+    else
+      radupdate=rad_a(gen)+cap_param%alpha_a*cap_param%Pub_a_v*(gen-cap_param%num_symm_gen)&
+        /(1.d0-cap_param%num_symm_gen)+alpha_c*(1-gen)*cap_param%Pub_a_v&
+        /(2.d0-2.d0*cap_param%num_symm_gen)
+    endif
+!!...  Calculate Poiseuille resistance in first half of arteriole - (only
+!!...  half total generation length)
+     R_art1=(8.d0*mu_app(gen)*L_a(gen)/2.d0)/(PI*radupdate**4.d0)
+     Pin=Pin-R_art1*Q01_mthrees
+     do nf=1,no_freq !radius needs to  be multipled by 1000 to go to mm (units of rest of model)
+      !!!ARC TO FIX alpha_a is in m/Pa, need in 1/Pa (just read in from main model?)
+       omega=nf*2*PI*harmonic_scale
+       wolmer=(radupdate*1000.0_dp)*sqrt(omega*fp%blood_density/mu_app(gen))
+       call bessel_complex(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp),bessel0,bessel1)
+       f10=2*bessel1/(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp)*bessel0)
+       wavespeed=sqrt(1.0_dp/(2*fp%blood_density*(elast_param%elasticity_parameters(1))))*sqrt(1-f10)!alpha in the sense of this model is 1/Pa so has to be dovided by radius
+       tube_admit(gen,nf)=PI*(radupdate*1000.0_dp)**2/(fp%blood_density*wavespeed/sqrt(1-f10))*sqrt(1-f10)
+       prop_const(gen,nf)=cmplx(0.0_dp,1.0_dp,8)*omega/(wavespeed)
+     enddo
+!!...    FIRST HALF OF VENULE
+!!...    Update radius of venule based on outlet pressure
+     if(rad_v(gen).LT.100.d-6) THEN
+       P_extv=cap_param%Palv ! From Yen Alveolar pressure dominates vessels <200um diam
+     else
+       P_extv=-Ppl
+     endif
+     if((Pout-P_extv).LE.cap_param%Pub_a_v)THEN
+       radupdate=rad_v(gen)+cap_param%alpha_v*(Pout-P_extv)*&
+         (gen-cap_param%num_symm_gen)/(1.d0-cap_param%num_symm_gen)+alpha_c*(1-gen)*&
+         (Pout-P_extv)/(2.d0-2.d0*cap_param%num_symm_gen)
+     else
+       radupdate=rad_v(gen)+cap_param%alpha_v*cap_param%Pub_a_v*(gen-cap_param%num_symm_gen)&
+         /(1.d0-cap_param%num_symm_gen)+alpha_c*(1-gen)*cap_param%Pub_a_v&
+         /(2.d0-2.d0*cap_param%num_symm_gen)
+     endif
+!!...   Calculate Poiseuille resistance in first half of venule
+     R_ven1=(8.0_dp*mu_app(gen)*L_v(gen)/2.0_dp)/(pi*radupdate**4.0_dp)
+     Pout=Pout+R_ven1*Q01_mthrees
+     do nf=1,no_freq !radius needs to  be multipled by 1000 to go to mm (units of rest of model)
+       omega=nf*2*PI*harmonic_scale
+       wolmer=(radupdate*1000.0_dp)*sqrt(omega*fp%blood_density/mu_app(gen))
+       call bessel_complex(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp),bessel0,bessel1)
+       f10=2*bessel1/(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp)*bessel0)
+       wavespeed=sqrt(1.0_dp/(2*fp%blood_density*elast_param%elasticity_parameters(1)))*sqrt(1-f10) !mm/s
+       tube_admit(gen+2*ngen,nf)=PI*(radupdate*1000.0_dp)**2/(fp%blood_density*wavespeed/sqrt(1-f10))*sqrt(1-f10)!mm3/Pa.s
+       prop_const(gen+2*ngen,nf)=cmplx(0.0_dp,1.0_dp,8)*omega/(wavespeed)!1/mm
+     enddo
+
+!!...   CAPILLARY ELEMENT (arteriole + venule + capillary)
+
+     Q01_mthrees=Q01_mthrees-Q_sheet(gen)
+     Hart=cap_param%H0+alpha_c*(Pressure(4*gen-3)-cap_param%Palv)
+     Hven=cap_param%H0+alpha_c*(Pressure(4*gen-1)-cap_param%Palv)
+     do nf=1,no_freq
+      if (constant_sheet_height.eqv..True.) then !! Case of constant capillary sheet height
+     omega=nf*2*PI*harmonic_scale
+     Gamma_sheet=sqrt(omega*Hart**3*cap_param%L_c**2*alpha_c/&
+        (cap_param%mu_c*cap_param%K_cap*cap_param%F_cap))*&
+        sqrt(cmplx(0.0_dp,1.0_dp,8))*1000.0_dp**3 !mm3/Pa.s
+       cap_admit(gen,nf)=Gamma_sheet
+          prop_const_cap(gen,nf)=sqrt(cmplx(0.0_dp,1.0_dp,8)*&
+            cap_param%mu_c*cap_param%K_cap*cap_param%F_cap*omega*alpha_c/(Hart**3))/1000.0_dp!1/mm
+      endif !! Case of constant capillary sheet height
+     enddo
+     !...   SECOND HALF OF ARTERIOLE
+!...    Update radius of arteriole based on inlet pressure
+     if(Pin-P_exta.LE.cap_param%Pub_a_v)THEN
+       radupdate=rad_a(gen)+cap_param%alpha_a*(Pin-P_exta)*&
+         (gen-cap_param%num_symm_gen)/(1.d0-cap_param%num_symm_gen)+alpha_c*(1-gen)*&
+         (Pin-P_exta)/(2.d0-2.d0*cap_param%num_symm_gen)
+     else
+       radupdate=rad_a(gen)+cap_param%alpha_a*cap_param%Pub_a_v*(gen-cap_param%num_symm_gen)&
+         /(1.d0-cap_param%num_symm_gen)+alpha_c*(1-gen)*cap_param%Pub_a_v&
+         /(2.d0-2.d0*cap_param%num_symm_gen)
+     endif
+
+       !...  Calculate Poiseuille resistance in second half of arteriole - (only
+       !...   half total generation length)
+      R_art2=(8*mu_app(gen)*L_a(gen)/2.d0)/(pi*radupdate**4.d0)
+      Pin=Pin-R_art2*Q01_mthrees
+
+     do nf=1,no_freq !radius needs to  be multipled by 1000 to go to mm (units of rest of model)
+       omega=nf*2*PI*harmonic_scale
+       wolmer=(radupdate*1000.0_dp)*sqrt(omega*fp%blood_density/mu_app(gen))
+       call bessel_complex(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp),bessel0,bessel1)
+       f10=2*bessel1/(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp)*bessel0)
+       wavespeed=sqrt(1.0_dp/(2*fp%blood_density*elast_param%elasticity_parameters(1)))*sqrt(1-f10)
+       tube_admit(gen+ngen,nf)=PI*(radupdate*1000.0_dp)**2/(fp%blood_density*wavespeed/sqrt(1-f10))*sqrt(1-f10)
+       prop_const(gen+ngen,nf)=cmplx(0.0_dp,1.0_dp,8)*omega/(wavespeed)
+     enddo
+
+!   SECOND HALF OF VENULE
+!...    Update radius - linear with pressure or constant at high pressure
+     if (Pout-P_extv.LE.cap_param%Pub_a_v)THEN
+       radupdate=rad_v(gen)+cap_param%alpha_v*(Pout-P_extv)*&
+         (gen-cap_param%num_symm_gen)/(1.d0-cap_param%num_symm_gen)+alpha_c*(1-gen)*&
+          (Pout-P_extv)/(2.d0-2.d0*cap_param%num_symm_gen)
+     else
+      radupdate=rad_v(gen)+cap_param%alpha_v*cap_param%Pub_a_v*(gen-cap_param%num_symm_gen)&
+        /(1.d0-cap_param%num_symm_gen)+alpha_c*(1-gen)*cap_param%Pub_a_v&
+        /(2.d0-2.d0*cap_param%num_symm_gen)
+     endif
+     R_ven2=(8.d0*mu_app(gen)*L_v(gen)/2.d0)/(pi*radupdate**4.d0)
+     Pout=Pout-R_ven2*Q01_mthrees
+     do nf=1,no_freq !radius needs to  be multipled by 1000 to go to mm (units of rest of model)
+       omega=nf*2*PI*harmonic_scale
+       wolmer=(radupdate*1000.0_dp)*sqrt(omega*fp%blood_density/mu_app(gen))
+       call bessel_complex(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp),bessel0,bessel1)
+       f10=2*bessel1/(wolmer*cmplx(0.0_dp,1.0_dp,8)**(3.0_dp/2.0_dp)*bessel0)
+       wavespeed=sqrt(1.0_dp/(2*fp%blood_density*elast_param%elasticity_parameters(1)))*sqrt(1-f10) !mm/s
+       tube_admit(gen+3*ngen,nf)=PI*(radupdate*1000.0_dp)**2/(fp%blood_density*wavespeed/sqrt(1-f10))*sqrt(1-f10)
+       prop_const(gen+3*ngen,nf)=cmplx(0.0_dp,1.0_dp,8)*omega/(wavespeed) !1/mm
+     enddo
+  enddo
+!write(*,*) 'I am here'
+!pause
+  !!...   CAPILLARY ELEMENT (arteriole + venule + capillary)  at terminal
+    Pin_sheet=Pressure(4*cap_param%num_symm_gen-6) !%pressure into final capillary sheets
+    Pout_sheet=Pressure(4*cap_param%num_symm_gen-4) !%pressure out of final capillary sheets
+    Hart=cap_param%H0+alpha_c*(Pin_sheet-cap_param%Palv)
+    Hven=cap_param%H0+alpha_c*(Pout_sheet-cap_param%Palv)
+   if (constant_sheet_height.eqv..True.) then !! Case of constant capillary sheet height
+    do nf=1,no_freq
+     omega=nf*2*PI*harmonic_scale
+     Gamma_sheet=sqrt(omega*Hart**3*cap_param%L_c**2*alpha_c/&
+        (cap_param%mu_c*cap_param%K_cap*cap_param%F_cap))*&
+        sqrt(cmplx(0.0_dp,1.0_dp,8))*1000.0_dp**3
+     gen=cap_param%num_symm_gen
+       cap_admit(gen,nf)=Gamma_sheet
+          prop_const_cap(gen,nf)=sqrt(cmplx(0.0_dp,1.0_dp,8)*&
+            cap_param%mu_c*cap_param%K_cap*cap_param%F_cap*omega*alpha_c/(Hart**3))/1000.0_dp!1/mm
+     enddo
+   endif !! Case of constant capillary sheet height
+
+  !FIRST GENERATION - need to relate to vein outlet admittance
+  !first vein in generation
+  do nf=1,no_freq
+  !sister and vessel are identical H=1.0
+   reflect_coeff=(2*tube_admit(1+2*ngen,nf)-eff_admit_downstream(nf))/(eff_admit_downstream(nf)+2*tube_admit(1+2*ngen,nf))
+   tube_eff_admit(1+2*ngen,nf)=tube_admit(1+2*ngen,nf)*(1&
+              -reflect_coeff*exp(-2.0_dp*prop_const(1+2*ngen,nf)*L_v(1)*1000.0_dp/2.0_dp))/&
+              (1+reflect_coeff*exp(-2.0_dp*prop_const(1+2*ngen,nf)*L_v(1)*1000.0_dp/2.0_dp))
+  !write(*,*) 'no_freq: ', no_freq
+!pause
+  enddo
+  !Now second vein and then capillary
+      if (constant_sheet_height.eqv..True.) then !! Case of constant capillary sheet height
+        do nf=1,no_freq
+  !Sister is capillary, vessel of interest is the vein
+    sister_current=exp(-1.0_dp*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp)/&
+      exp(-1.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp)
+     reflect_coeff=(tube_admit(1+3*ngen,nf)+(2*sister_current-1)*cap_admit(1,nf)-tube_admit(1+2*ngen,nf))&
+       /(tube_admit(1+2*ngen,nf)+tube_admit(1+3*ngen,nf)+cap_admit(1,nf))
+     tube_eff_admit(1+3*ngen,nf)=tube_admit(1+3*ngen,nf)*(1&
+              -reflect_coeff*exp(-2.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp/2.0_dp))/&
+              (1+reflect_coeff*exp(-2.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp/2.0_dp))
+     !sister is the tube current is the capillary
+     sister_current=exp(-1.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp/2.0_dp)/&
+        exp(-1.0_dp*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp)
+     reflect_coeff=((2*sister_current-1)*tube_admit(1+3*ngen,nf)+cap_admit(1,nf)-tube_admit(1+2*ngen,nf))&
+       /(tube_admit(1+2*ngen,nf)+tube_admit(1+3*ngen,nf)+cap_admit(1,nf))
+     cap_eff_admit(1,nf)=cap_admit(1,nf)*(1&
+       -reflect_coeff*exp(-2.0_dp*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp))/&
+       (1+reflect_coeff*exp(-2.0_dp*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp))
+        enddo
+      else  ! Case of Non-Constant capillary sheet height
+        do nf=1,no_freq
+ !Sister is capillary, vessel of interest is the vein
+           sister_current=exp(-1.0_dp*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp)/&
+      exp(-1.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp)
+     reflect_coeff=(tube_admit(1+3*ngen,nf)+(2*sister_current-1)*cap_admit(1,nf)-tube_admit(1+2*ngen,nf))&
+       /(tube_admit(1+2*ngen,nf)+tube_admit(1+3*ngen,nf)+cap_admit(1,nf))
+          tube_eff_admit(1+3*ngen,nf)=tube_admit(1+3*ngen,nf)*(1&
+              -reflect_coeff*exp(-2.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp/2.0_dp))/&
+              (1+reflect_coeff*exp(-2.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp/2.0_dp))
+     !sister is the tube current is the capillary
+         omega=nf*2*PI*harmonic_scale
+         write(*,*) 'mu: ' ,cap_param%mu_c
+         write(*,*) 'K: ' ,cap_param%K_cap
+         write(*,*) 'F: ' ,cap_param%F_cap
+         write(*,*) 'alphaC: ' ,alpha_c
+         write(*,*) 'Lc: ' ,cap_param%L_c
+         write(*,*) 'H0 is: ' ,cap_param%H0
+         nd_omega = (cap_param%mu_c*cap_param%K_cap*cap_param%F_cap*omega*alpha_c*(cap_param%L_c)**2)/(cap_param%H0**3) ! Non-Dimensional Frequency
+         !write(*,*) 'Non-Dimensional Freq1: ', nd_omega
+         h_a = Hart/cap_param%H0  ! non-dimensionilising Hart
+         h_v = Hven/cap_param%H0  ! non-dimensionilising Hven
+         write(*,*) 'ha: ', h_a
+         write(*,*) 'hv: ', h_v
+         call calc_cap_admit(h_a,h_v,nd_omega,Y11,Y12,Y21,Y22) ! Non-constant capillary sheet
+         cap_eff_admit(1,nf) = Y11 - (Y12*Y21)/(Y22)
+         write(*,*) 'Cap_effective_imped1: ', cap_eff_admit(1,nf)
+pause
+        enddo
+      endif !! Case of capillary sheet height end for first generation
+  do gen=2,cap_param%num_symm_gen-1
+      if (constant_sheet_height.eqv..True.) then !! Case of constant capillary sheet height
+        do nf =1,no_freq
+      !Next two vessels are identical
+      reflect_coeff=(2*tube_admit(gen+2*ngen,nf)-tube_admit(gen+2*ngen-1,nf))&
+        /(tube_admit(gen+2*ngen-1,nf)+2*tube_admit(gen+2*ngen,nf))
+       tube_eff_admit(gen+2*ngen,nf)=tube_admit(gen+2*ngen,nf)*(1&
+              -reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))/&
+              (1+reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))
+      !Next up a vein plus a capillary
+      sister_current=exp(-1.0_dp*prop_const_cap(gen,nf)*cap_param%L_c*1000.0_dp)/&
+        exp(-1.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp)
+      reflect_coeff=(tube_admit(gen+3*ngen,nf)+(2*sister_current-1)*cap_admit(gen,nf)-tube_admit(gen+2*ngen,nf))&
+        /(tube_admit(gen+2*ngen,nf)+tube_admit(gen+3*ngen,nf)+cap_admit(gen,nf))
+      tube_eff_admit(gen+3*ngen,nf)=tube_admit(gen+3*ngen,nf)*(1&
+              -reflect_coeff*exp(-2.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))/&
+              (1+reflect_coeff*exp(-2.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))
+      !sister is the tube current is the capillary
+      sister_current=exp(-1.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp)/&
+        exp(-1.0_dp*prop_const_cap(gen,nf)*cap_param%L_c*1000.0_dp)
+      reflect_coeff=((2*sister_current-1)*tube_admit(gen+3*ngen,nf)+cap_admit(gen,nf)-tube_admit(1+2*ngen,nf))&
+         /(tube_admit(1+2*ngen,nf)+tube_admit(gen+3*ngen,nf)+cap_admit(gen,nf))
+      cap_eff_admit(gen,nf)=cap_admit(gen,nf)*(1&
+              -reflect_coeff*exp(-2.0_dp*prop_const_cap(gen,nf)*cap_param%L_c*1000.0_dp))/&
+              (1+reflect_coeff*exp(-2.0_dp*prop_const_cap(gen,nf)*cap_param%L_c*1000.0_dp))
+        enddo
+      else  ! Case of Non-Constant capillary sheet height
+        do nf =1,no_freq
+      !Next two vessels are identical
+      reflect_coeff=(2*tube_admit(gen+2*ngen,nf)-tube_admit(gen+2*ngen-1,nf))&
+        /(tube_admit(gen+2*ngen-1,nf)+2*tube_admit(gen+2*ngen,nf))
+       tube_eff_admit(gen+2*ngen,nf)=tube_admit(gen+2*ngen,nf)*(1&
+              -reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))/&
+              (1+reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))
+      !Next up a vein plus a capillary
+      sister_current=exp(-1.0_dp*prop_const_cap(gen,nf)*cap_param%L_c*1000.0_dp)/&
+        exp(-1.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp)
+      reflect_coeff=(tube_admit(gen+3*ngen,nf)+(2*sister_current-1)*cap_admit(gen,nf)-tube_admit(gen+2*ngen,nf))&
+        /(tube_admit(gen+2*ngen,nf)+tube_admit(gen+3*ngen,nf)+cap_admit(gen,nf))
+      tube_eff_admit(gen+3*ngen,nf)=tube_admit(gen+3*ngen,nf)*(1&
+              -reflect_coeff*exp(-2.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))/&
+              (1+reflect_coeff*exp(-2.0_dp*prop_const(gen+3*ngen,nf)*L_v(gen)*1000.0_dp/2.0_dp))
+      !sister is the tube current is the capillary
+         omega=nf*2*PI*harmonic_scale
+         write(*,*) 'mu: ' ,cap_param%mu_c
+         write(*,*) 'K: ' ,cap_param%K_cap
+         write(*,*) 'F: ' ,cap_param%F_cap
+         write(*,*) 'alphaC: ' ,alpha_c
+         write(*,*) 'Lc: ' ,cap_param%L_c
+         write(*,*) 'H0 is: ' ,cap_param%H0
+         nd_omega = (cap_param%mu_c*cap_param%K_cap*cap_param%F_cap*omega*alpha_c*(cap_param%L_c)**2)/(cap_param%H0**3) ! Non-Dimensional Frequency
+         !write(*,*) 'Non-Dimensional Freq: ', nd_omega
+         h_a = Hart/cap_param%H0  ! non-dimensionilising Hart
+         h_v = Hven/cap_param%H0  ! non-dimensionilising Hven
+         write(*,*) 'ha: ', h_a
+         write(*,*) 'hv: ', h_v
+         call calc_cap_admit(h_a,h_v,nd_omega,Y11,Y12,Y21,Y22) ! Non-constant capillary sheet
+         cap_eff_admit(gen,nf) = Y11 - (Y12*Y21)/(Y22)
+         write(*,*) 'Cap_effective_imped2: ', cap_eff_admit(gen,nf)
+pause
+        enddo
+      endif
+  enddo
+
+ !Final generation capillary
+   gen=cap_param%num_symm_gen-1
+      if (constant_sheet_height.eqv..True.) then !! Case of constant capillary sheet height
+        do nf=1,no_freq
+   !two identical sisters
+     reflect_coeff=(2*cap_admit(cap_param%num_symm_gen,nf)-tube_admit(gen+3*ngen,nf))&
+       /(tube_admit(gen+3*ngen,nf)+2*cap_admit(cap_param%num_symm_gen,nf))
+     cap_eff_admit(cap_param%num_symm_gen,nf)=cap_admit(cap_param%num_symm_gen,nf)*(1&
+       -reflect_coeff*exp(-2.0_dp*prop_const_cap(cap_param%num_symm_gen,nf)**cap_param%L_c*1000.0_dp))/&
+       (1+reflect_coeff*exp(-2.0_dp*prop_const_cap(cap_param%num_symm_gen,nf)*cap_param%L_c*1000.0_dp))
+        enddo
+      else  ! Case of Non-Constant capillary sheet height
+        do nf=1,no_freq
+         omega=nf*2*PI*harmonic_scale
+         write(*,*) 'mu: ' ,cap_param%mu_c
+         write(*,*) 'K: ' ,cap_param%K_cap
+         write(*,*) 'F: ' ,cap_param%F_cap
+         write(*,*) 'alphaC: ' ,alpha_c
+         write(*,*) 'Lc: ' ,cap_param%L_c
+         write(*,*) 'H0 is: ' ,cap_param%H0
+         nd_omega = (cap_param%mu_c*cap_param%K_cap*cap_param%F_cap*omega*alpha_c*(cap_param%L_c)**2)/(cap_param%H0**3) ! Non-Dimensional Frequency
+         !write(*,*) 'Non-Dimensional Freq: ', nd_omega
+         h_a = Hart/cap_param%H0  ! non-dimensionilising Hart
+         h_v = Hven/cap_param%H0  ! non-dimensionilising Hven
+         write(*,*) 'ha: ', h_a
+         write(*,*) 'hv: ', h_v
+         call calc_cap_admit(h_a,h_v,nd_omega,Y11,Y12,Y21,Y22) ! Non-constant capillary sheet
+         cap_eff_admit(cap_param%num_symm_gen,nf) = Y11 - (Y12*Y21)/(Y22)
+         write(*,*) 'Cap_effective_imped3: ', cap_eff_admit(cap_param%num_symm_gen,nf)
+pause
+        enddo
+      endif
+  !now calculate effective admittance up the arteriole side of the tree
+   do gen=cap_param%num_symm_gen-1,1,-1
+     do nf=1,no_freq
+   !Second half of ateriole daughter admittance is 2* vessel below it
+     if(gen.eq.(cap_param%num_symm_gen-1))then
+       daughter_admit=2.0_dp*cap_eff_admit(cap_param%num_symm_gen,nf)
+     else
+       daughter_admit=2.0_dp*tube_eff_admit((gen+1)+2*ngen,nf)
+     endif
+     reflect_coeff=(tube_admit(gen+2*ngen,nf)-daughter_admit)/&
+              (tube_admit(gen+2*gen,nf)+daughter_admit)
+     tube_eff_admit(gen+2*ngen,nf)=tube_admit(gen+2*ngen,nf)*(1&
+              -reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_a(gen)*1000.0_dp/2.0_dp))/&
+              (1+reflect_coeff*exp(-2.0_dp*prop_const(gen+2*ngen,nf)*L_a(gen)*1000.0_dp/2.0_dp))
+      !first half of arteriole, daughter admittance is second half of arteriole plus cap
+      daughter_admit=tube_eff_admit(gen+2*ngen,nf)+cap_eff_admit(gen,nf)
+      reflect_coeff=(tube_admit(gen,nf)-daughter_admit)/&
+              (tube_admit(gen,nf)+daughter_admit)
+      tube_eff_admit(gen,nf)=tube_admit(gen,nf)*(1&
+              -reflect_coeff*exp(-2.0_dp*prop_const(gen,nf)*L_a(gen)*1000.0_dp/2.0_dp))/&
+              (1+reflect_coeff*exp(-2.0_dp*prop_const(gen,nf)*L_a(gen)*1000.0_dp/2.0_dp))
+
+    enddo
+   enddo
+
+   do nf=1,no_freq
+     admit(nf)=tube_eff_admit(1,nf)!tube_eff_admit(1,nf) !!effective daughter admittance of first arteriole
+   enddo
+
+  deallocate(cap_admit)
+  deallocate(tube_admit)
+  deallocate(cap_eff_admit)
+  deallocate(tube_eff_admit)
+  deallocate(prop_const)
+  deallocate (Pressure, STAT = AllocateStatus)
+  deallocate (l_a, STAT = AllocateStatus)
+  deallocate (l_v, STAT = AllocateStatus)
+  deallocate (rad_a, STAT = AllocateStatus)
+  deallocate (rad_v, STAT = AllocateStatus)
+  deallocate (Q_sheet, STAT = AllocateStatus)
+  deallocate (mu_app, STAT = AllocateStatus)
+
+
+  call enter_exit(sub_name,2)
+
+end subroutine cap_flow_admit
 end module capillaryflow
 
