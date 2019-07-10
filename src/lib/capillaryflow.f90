@@ -50,7 +50,7 @@ complex(dp), intent(out) :: Y11, Y12, Y21, Y22
 
 
 ! Local Variables:
-integer, parameter :: N_nodes = 1000
+integer, parameter :: N_nodes = 3000
 integer :: n,ldb
 integer :: iopt, info
 real(dp),  allocatable :: sparseval(:)
@@ -1452,7 +1452,6 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
   Y12 = 0.0_dp ! admittance initialisation
   Y21 = 0.0_dp ! admittance initialisation
   Y22 = 0.0_dp ! admittance initialisation
-  WRITE(*,*) 'no_freq: ', no_freq
 
   !!...  Initial guess for pressure distribution lets say all arterial pressures are the same
   !!...  and all the venous pressures are the same solution appears independent of this.
@@ -1736,6 +1735,7 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
             h_v = Hven/cap_param%H0
             call calc_cap_admit(h_a,h_v,nd_omega,Y11,Y12,Y21,Y22) ! Non-constant capillary sheet
             cap_eff_admit(1,nf) = Y11 - (Y12*Y21)/(tube_admit(1+2*ngen,nf)+Y22)
+            cap_eff_admit(1,nf) = cap_eff_admit(1,nf) * 0.000001
           !Sister is capillary, vessel of interest is the vein
             sister_current=exp(-1.0_dp*prop_const_cap(1,nf)*cap_param%L_c*1000.0_dp)/&
             exp(-1.0_dp*prop_const(1+3*ngen,nf)*L_v(1)*1000.0_dp)
@@ -1795,6 +1795,7 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
          h_v = Hven/cap_param%H0  ! non-dimensionilising Hven
          call calc_cap_admit(h_a,h_v,nd_omega,Y11,Y12,Y21,Y22) ! Non-constant capillary sheet
          cap_eff_admit(gen,nf) = Y11 - (Y12*Y21)/(tube_admit(1+2*ngen,nf)+Y22)
+         cap_eff_admit(gen,nf) = cap_eff_admit(gen,nf) * 0.000001
         enddo
       endif
   enddo
@@ -1818,6 +1819,7 @@ subroutine cap_flow_admit(ne,admit,eff_admit_downstream,Lin,Lout,P1,P2,&
          h_v = Hven/cap_param%H0  ! non-dimensionilising Hven
          call calc_cap_admit(h_a,h_v,nd_omega,Y11,Y12,Y21,Y22) ! Non-constant capillary sheet
          cap_eff_admit(cap_param%num_symm_gen,nf) = Y11 - (Y12*Y21)/(tube_admit(gen+3*ngen,nf)+Y22)
+         cap_eff_admit(cap_param%num_symm_gen,nf) = cap_eff_admit(cap_param%num_symm_gen,nf) * 0.000001
         enddo
       endif
   !now calculate effective admittance up the arteriole side of the tree
