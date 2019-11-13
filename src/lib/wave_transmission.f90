@@ -592,7 +592,6 @@ else ! Solving for remodeling case - only implemented for elastic_alpha
     narrow_factor=0.925
     prune_rad=0.16E-3
     prune_fraction=0.0625
-    write(*,*) 'grade3'
   elseif(remodeling_grade.eq.4) then
     alt_hyp=3.0_dp/6
     alt_fib=1.0_dp
