@@ -1056,8 +1056,11 @@ contains
      integer, allocatable :: nbranches(:,:)
      real(dp),allocatable ::  stats(:,:), branches(:,:), std_dev(:,:,:)
      real(dp),allocatable ::  sum_mean(:,:,:)
-     real(dp),allocatable ::  n_terminal(:,:,:),ntally(:,:,:)
-     real(dp) :: xp1(3), xp2(3), xp3(3)
+!    real(dp),allocatable ::  n_terminal(:,:,:),ntally(:,:,:)
+     real(dp),allocatable ::  ntally(:,:,:)
+     integer,allocatable ::  n_terminal(:), NORD(:,:)
+
+     real(dp) :: xp1(3), xp2(3), xp3(3), sum_term
      integer :: i,j,k,nj,nline,nn,num_data_estimate,num_vertices
      integer :: ne, ne_child
      logical :: internal
@@ -1073,7 +1076,7 @@ contains
          sum_diameter(40),sum_length(40),sum_pathlength,sum_volume(40),total_length,&
          max_bin,min_bin
      real(dp) :: means(20),sdt(20),ratios(4,3),r_squared(4,3)
-     real(dp) :: angle
+     real(dp) :: angle, slope
 
      real(dp),allocatable :: sizes_from_entry(:,:),diameters(:),lengths(:)
      real(dp),allocatable :: YREGRESS(:,:)
@@ -1092,10 +1095,17 @@ contains
      if(.not.allocated(sizes_from_entry)) allocate(sizes_from_entry(2,num_elems))
      if(.not.allocated(stats)) allocate(stats(21,num_elems))
      if(.not.allocated(branches)) allocate(branches(10,num_elems))
+
      if(.not.allocated(sum_mean)) allocate(sum_mean(4,6,num_elems))
-     if(.not.allocated(n_terminal)) allocate(n_terminal(4,6,num_elems))
      if(.not.allocated(std_dev)) allocate(std_dev(4,6,num_elems))
+
+! QUESTION FOR MHT - are these still needed ?
+! MHT, Do we need still have NORD, nbranches ?
+! QUESTION: WHat is NMAX_GEN and NUM_SCHEMES ?
+
+     if(.not.allocated(n_terminal)) allocate(n_terminal(4,6,num_elems))
      if(.not.allocated(nbranches)) allocate(nbranches(5,num_elems))
+     if(.not.allocated(NORD)) allocate(NORD(5,num_elems))
 
      if(.not.allocated(diameters)) allocate(diameters(num_elems))
      if(.not.allocated(lengths)) allocate(lengths(num_elems))
@@ -1215,7 +1225,7 @@ contains
            endif
 
           if(elem_cnct(1,0,ne).EQ.0) then
-            N_TERMINAL(1)=N_TERMINAL(1)+1
+            n_terminal(1)=n_terminal(1)+1
           endif
 
           !CC... Geometric properties of mesh
@@ -1525,7 +1535,7 @@ contains
        !=======
        DO N=1,NMAX_GEN(i)
           WRITE(10,'(3(I10),5(F8.2,'' ('',F6.2,'')''))') &
-            N,ntally(i,1,N),N_TERMINAL(N),&
+            N,ntally(i,1,N),n_terminal(N),&
             sum_mean(i,1,N),std_dev(i,1,N), &
             sum_mean(i,2,N),std_dev(i,2,N),&
             sum_mean(i,3,N),std_dev(i,3,N),&
@@ -1533,8 +1543,8 @@ contains
             sum_mean(i,5,N),std_dev(i,5,N)
 
 !         CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
-          average_term_gen=average_term_gen + N_TERMINAL(N)*N
-          sum_term=sum_term + N_TERMINAL(N)
+          average_term_gen=average_term_gen + n_terminal(N)*N
+          sum_term=sum_term + n_terminal(N)
         ENDDO
         IF(SUM_TERM.GT.0)THEN
           average_term_gen=average_term_gen/DBLE(sum_term)
@@ -3280,17 +3290,18 @@ contains
 !###    MESH_ANGLE calculates the angle between vectors XP1-XP2 and XP2-XP3
     use arrays,only: dp,elems,elem_cnct,elem_direction,elem_field
     use diagnostics,only: enter_exit
-    character(len=60) :: sub_name
 
     IMPLICIT NONE
 !   INCLUDE 'geom00.cmn'
 !   INCLUDE 'tol00.cmn'
 
-    real(dp),INTENT(IN) :: ANGLE,XP1(3),XP2(3),XP3(3)
+    real(dp),INTENT(IN) :: ANGLE
+    real(dp),INTENT(IN) :: XP1(3),XP2(3),XP3(3)
 
     !Local variables
     INTEGER :: nj
     REAL(dp) :: SCALAR,U(3),V(3)
+    character(len=60) :: sub_name
 
     sub_name = 'mesh_angle'
     call enter_exit(sub_name,1)
@@ -3573,6 +3584,7 @@ contains
     INTEGER :: nj
     REAL(dp) :: DIFF1(3),DIFF2(3),NORMSIZE
     LOGICAL COLLINEAR
+    character(len=60) :: sub_name
 
     sub_name = 'plane_from_3_points'
     call enter_exit(sub_name,1)
