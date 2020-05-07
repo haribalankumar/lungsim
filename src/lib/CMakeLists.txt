@@ -15,6 +15,7 @@ set(LIB_SRCS
   imports.f90
   math_utilities.f90
   mesh_utilities.f90
+  mesh_functions.f90
   other_consts.f90
   precision.f90
   pressure_resistance_flow.f90
@@ -22,6 +23,7 @@ set(LIB_SRCS
   species_transport.f90
   ventilation.f90
   wave_transmission.f90
+  surface_fitting.f90
 )
 if (SUPERLU_FOUND)
   set_source_files_properties(capillaryflow.f90 PROPERTIES COMPILE_DEFINITIONS HAVE_SUPERLU)

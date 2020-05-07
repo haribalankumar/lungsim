@@ -156,7 +156,35 @@ contains
 
 !
 !###################################################################################
+
+  subroutine list_mesh_statistics_c(filename, filename_len)&
+ bind(C, name="list_mesh_statistics_c")
+
+    use arrays,only: dp
+    use iso_c_binding, only: c_ptr
+    use utils_c, only: strncpy
+    use other_consts, only: MAX_FILENAME_LEN
+    use geometry, only: list_mesh_statistics
+    implicit none
+
+    integer,intent(in) :: filename_len
+    type(c_ptr), value, intent(in) :: filename
+    character(len=MAX_FILENAME_LEN) :: filename_f
+
+    call strncpy(filename_f, filename, filename_len)
+
+#if defined _WIN32 && defined __INTEL_COMPILER
+    call so_list_mesh_statistics(filename_f)
+#else
+    call list_mesh_statistics(filename_f)
+#endif
+
+  end subroutine list_mesh_statistics_c
+
 !
+!###################################################################################
+!
+
   subroutine make_data_grid_c(surface_elems, spacing, to_export, filename, filename_len, groupname, groupname_len)&
  bind(C, name="make_data_grid_c")
     

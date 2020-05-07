@@ -1,11 +1,11 @@
 module surface_fitting
 
   use arrays
-  use geometry
   use other_consts
   use mesh_functions
-  use precision
-  use solve
+  !use precision
+  use solve,only: solve_linear_system
+
 
   implicit none
 
@@ -36,6 +36,7 @@ contains
 !!! the nodes/derivatives that are fixed, and any mapping of nodes and/or
 !!! derivatives
 
+    use geometry,only: get_local_node_f
 !!! dummy arguments
     integer,intent(in) :: niterations             ! user-specified number of fitting iterations
     character(len=255),intent(in) :: fitting_file ! file that lists versions/mapping/BCs
@@ -141,6 +142,8 @@ contains
 !!! and mapping of dependent variables for geometric fitting. set up the 
 !!! dependent variable-to-mapping arrays  
   
+    use arrays,only: elems_2d,node_versn_2d,node_xyz_2d,num_elems_2d,num_nodes_2d
+    use geometry,only: get_final_integer,get_local_node_f
 !!! dummy arguments
     integer :: elem_list(0:),npny(0:,:),num_depvar,nynp(:,:,:,:),nynr(0:)
     integer,allocatable :: nyny(:,:)
@@ -191,7 +194,8 @@ contains
     read_number_of_fixed : do
        read(unit=IPFILE, fmt="(a)", iostat=ierror) string
        if(index(string, "fixed")> 0) then
-          call get_final_integer(string,number_of_fixed)
+!HARI         call get_final_integer(string,number_of_fixed)
+          number_of_fixed = get_final_integer(string)
           exit read_number_of_fixed
        endif
     end do read_number_of_fixed
@@ -203,17 +207,13 @@ contains
        iend=index(string," ") !get location of next blank in sub-string
        read (string(ibeg:iend-1), '(i6)' ) np_global
        np = get_local_node_f(2,np_global)
-
        string = adjustl(string(iend:i_ss_end)) ! get chars beyond " " and remove the leading blanks
        iend=index(string," ") !get location of next blank in sub-string
        read (string(ibeg:iend-1), '(i6)' ) nv_fix
-
        string = adjustl(string(iend:i_ss_end)) ! get chars beyond " " and remove the leading blanks
        read (string(ibeg:i_ss_end), '(i6)' ) nk
-
 !       string = adjustl(string(iend:i_ss_end)) ! get chars beyond " " and remove the leading blanks
 !       read (string(ibeg:i_ss_end), '(i6)' ) nk
-
        nk=nk+1 !read in 0 for coordinate, 1 for 1st deriv, 2 for 2nd deriv
        if(nv_fix.eq.0)then ! do for all versions
           do nv = 1,node_versn_2d(np)
@@ -246,7 +246,6 @@ contains
           enddo !nj
        enddo !nv
     enddo !np
-
   end subroutine define_geometry_fit
   
 !!! ##########################################################################      
@@ -278,11 +277,9 @@ contains
           enddo !nn
        enddo !i
     enddo !j
-
   end subroutine gauss1
   
 !!! ##########################################################################      
-
   function getnyr(npny,ny,nynp)
     
 !!! returns the dependent variable number
@@ -304,9 +301,8 @@ contains
 !!! ##########################################################################      
   
   subroutine globalf(nony,not_1,not_2,npny,nyno,nynp,nyny,cony,cyno,cyny,fix_bcs)
-
 !!! calculates the mapping arrays nyno/nony/cyno/cony
-
+    use arrays,only: node_versn_2d,num_nodes_2d
 !!! dummy arguments
     integer :: nony(0:,:,:),not_1,not_2,npny(0:,:),nyno(0:,:,:),nynp(:,:,:,:),nyny(0:,:)
     real(dp) :: cony(0:,:,:),cyno(0:,:,:),cyny(0:,:)
@@ -388,13 +384,14 @@ contains
     NOT_2 = no_tot(2)
     
   end subroutine globalf
-
 !!! ##########################################################################      
-
   subroutine line_segments_for_2d_mesh
     
 !!! sets up the line segment arrays for a 2d mesh
     
+    use arrays,only: arclength,elem_cnct_2d,elem_nodes_2d,elem_versn_2d,elem_lines_2d,&
+         lines_in_elem,line_versn_2d,&
+         lines_2d,nodes_in_line,num_elems_2d,num_lines_2d,scale_factors_2d
 !!! local variables
     integer :: ne,ne_adjacent,ni1,nj,npn(2)
     logical :: MAKE
@@ -406,7 +403,6 @@ contains
        if(elem_cnct_2d(-2,0,ne) == 0) num_lines_2d=num_lines_2d+1
        num_lines_2d=num_lines_2d+2 ! the minimum # of new lines for each element
     enddo
-
     if(.not.allocated(lines_2d)) allocate (lines_2d(0:num_lines_2d))
     if(.not.allocated(line_versn_2d)) allocate(line_versn_2d(2,3,num_lines_2d))
     if(.not.allocated(elem_lines_2d)) allocate (elem_lines_2d(4,num_elems_2d))
@@ -414,14 +410,12 @@ contains
     if(.not.allocated(nodes_in_line)) allocate (nodes_in_line(3,0:3,num_lines_2d))
     if(.not.allocated(scale_factors_2d)) allocate(scale_factors_2d(16,num_elems_2d))
     if(.not.allocated(arclength)) allocate(arclength(3,num_lines_2d)) 
-
     lines_in_elem=0
     lines_2d=0
     elem_lines_2d=0
     nodes_in_line=0
     line_versn_2d=0
     num_lines_2d=0
-
     do ne=1,num_elems_2d
        !check whether to make a line
        MAKE=.FALSE.
@@ -461,7 +455,6 @@ contains
        if(ne_adjacent.gt.0)then
           if(elem_lines_2d(2,ne_adjacent) == 0) MAKE=.TRUE.
        endif
-
        if(MAKE)then
           num_lines_2d=num_lines_2d+1
           lines_2d(num_lines_2d)=num_lines_2d !record a new line number
@@ -527,14 +520,11 @@ contains
     call calc_scale_factors_2d('arcl')
     
   end subroutine line_segments_for_2d_mesh
-
 !!! ##########################################################################      
-
   subroutine list_data_error(data_on_elem,ndata_on_elem,data_xi)
-
 !!! calculate and write out the RMS error for distance between data points
 !!! and 2d mesh surface
-
+    use arrays,only: data_xyz,num_elems_2d
 !!! dummy arguments
     integer :: data_on_elem(:,:),ndata_on_elem(:) 
     real(dp) :: data_xi(:,:)
@@ -543,7 +533,6 @@ contains
     real(dp) :: data_xi_local(2),EDD,SAED,SMED,SUM,SQED,X(6),&
          XE(num_deriv_elem,num_coords)
     
-
     SMED=0.0_dp
     SAED=0.0_dp
     SQED=0.0_dp
@@ -591,7 +580,8 @@ contains
 !!! ##########################################################################      
   
   subroutine map_versions(IPFILE,num_depvar,nynp,nyny,cyny,fit_soln,fix_bcs)
-
+    use arrays,only: node_versn_2d,node_xyz_2d,num_nodes_2d
+    use geometry,only: get_final_integer,get_local_node_f
 !!! dummy arguments
     integer, intent(in) :: IPFILE,num_depvar
     integer :: nynp(:,:,:,:)
@@ -630,7 +620,8 @@ contains
        read(unit=IPFILE, fmt="(a)", iostat=ierror) string
        ! read line containing "Number of mappings"
        if(index(string, "mappings")> 0) then
-           call get_final_integer(string,number_of_maps)
+!HARI        call get_final_integer(string,number_of_maps)
+           number_of_maps = get_final_integer(string)
           exit read_number_of_mappings
        endif
     end do read_number_of_mappings
@@ -703,14 +694,13 @@ contains
   end subroutine map_versions
   
 !!! ##########################################################################      
-
   subroutine melgef(LGE2,ne,NHST,nynp)
-
 !!! calculates the row numbers (LGE(*,1)) and column numbers
 !!! (LGE(*,2)) in the matrix for fitting for element variables nhs
 !!! and fit variable njj in region nr.  It also returns the total
 !!! number of element variables NHST(nrc).
     
+    use arrays,only: elem_nodes_2d,elem_versn_2d
 !!! dummy arguments    
     integer :: LGE2(num_fit*num_deriv_elem,2),ne,NHST(2),nynp(:,:,:,:)
 !!! local variables
@@ -731,9 +721,7 @@ contains
     enddo !nrc
     
   end subroutine melgef
-
 !!! ##########################################################################      
-
   function psi1(nu,nk,nn,XI)
     
 !!! dummy arguments
@@ -751,11 +739,8 @@ contains
     do ni=1,2
        psi1 = psi1*ph3(inp(nn,ni),ido(nk,ni),ipu(nu,ni),xi(ni))
     enddo
-
   end function psi1
-
 !!! ###############################################################
-
   function pxi(nu,xi,x)
     
 !!! dummy arguments
@@ -773,13 +758,13 @@ contains
           pxi = pxi + psi1(nu,nk,nn,xi)*x(ns)
        enddo
     enddo
-
   end function pxi
   
 !!! ##########################################################################      
-
   subroutine update_scale_factor_norm
   
+    use arrays,only: node_versn_2d,node_xyz_2d,num_nodes_2d
+    
 !!! local variables
     integer :: nj,nk,nk1,np,nv
     real(dp) :: SCALE,XD(3),ZERO_TOL=1.0e-12_dp
@@ -808,11 +793,10 @@ contains
   end subroutine update_scale_factor_norm
   
 !!! ##########################################################################      
-
   subroutine xpxe(ne,xe)
-
 !!! copies geometry information from nodes into a local element array
     
+    use arrays,only: elem_nodes_2d,elem_versn_2d,node_xyz_2d,scale_factors_2d
 !!! dummy arguments
     integer,intent(in) :: ne
     real(dp) :: xe(:,:)
@@ -832,7 +816,6 @@ contains
     enddo !nj
     
   end subroutine xpxe
-
 !!! ##########################################################################      
   
   subroutine zder(data_on_elem,ndata_on_elem,ne,data_xi,ER,PG,WDL,WG,sobelov_wts,&
@@ -842,7 +825,7 @@ contains
 !!!    fit of linear field variables, defined by nodal values
 !!!    node_xyz_2d(nk,nv,nj,np), to the set of data values data_xyz(nj,nd) with
 !!!    weights data_weight(nj,nd) at local coordinate values data_xi(ni,nd).
-
+    use arrays,only: data_weight,data_xyz,scale_factors_2d
 !!! dummy arguments
     integer :: data_on_elem(:,:),ndata_on_elem(:),ne
     real(dp) :: data_xi(:,:),ER(:),PG(:,:,:),WDL(:,:),WG(:),sobelov_wts(0:,:),&
@@ -895,13 +878,12 @@ contains
 !!! ##########################################################################      
   
   subroutine zdes(ndata_on_elem,ne,ES,PG,WDL,WG,sobelov_wts,XIDL)
-
 !!!    ZDES evaluates element stiffness matrix ES(ms,ns) in calculation
 !!!    of least squares fit of linear field variables, defined by nodal
 !!!    values node_xyz_2d(nk,nv,nj,np), to the set of data values XD(nj,nd) with
 !!!    weights data_weight(nj,nd) at local coordinate values data_xi(ni,nd), where
 !!!    nj=NJO.
-
+    use arrays,only: scale_factors_2d
 !!! dummy arguments    
     integer :: ndata_on_elem(:),ne
     real(dp) :: ES(:,:),PG(:,:,:),WDL(:,:),WG(:),sobelov_wts(0:,:),XIDL(:,:)
@@ -977,11 +959,11 @@ contains
     enddo !nhj1
     
   end subroutine zdes
-
 !!! ##########################################################################      
     
   subroutine zpze_fit(ne,fit_soln_local,fit_soln)
-
+    use arrays,only: elem_nodes_2d,elem_versn_2d,&
+         scale_factors_2d
 !!! dummy arguments
     integer,intent(in) :: ne
     real(dp) :: fit_soln_local(:,:)
@@ -1007,6 +989,7 @@ contains
   
   subroutine calculate_ny_maps(npny,num_depvar,nynp,nynr)
   
+    use arrays,only: node_versn_2d,num_nodes_2d
 !!! dummy arguments
     integer :: npny(0:,:),num_depvar,nynp(:,:,:,:),nynr(0:)
 !!! local variables
@@ -1039,13 +1022,12 @@ contains
        enddo !np
     enddo !njj
     num_depvar = ny
-
   end subroutine calculate_ny_maps
-
 !!! ##########################################################################      
     
   subroutine define_2d_elements(ELEMFILE)
-
+    use arrays,only: elems_2d,elem_nodes_2d,elem_versn_2d,node_versn_2d,num_elems_2d
+    use geometry,only: get_final_integer,get_four_nodes,element_connectivity_2d
     character(len=*) :: ELEMFILE
     
     !     Local Variables
@@ -1058,11 +1040,11 @@ contains
     read_number_of_elements : do
        read(unit=10, fmt="(a)", iostat=ierror) ctemp1
        if(index(ctemp1, "elements")> 0) then
-          call get_final_integer(ctemp1,number_of_elements)
+!HARI     call get_final_integer(ctemp1,number_of_elements)
+          number_of_elements = get_final_integer(ctemp1)
           exit read_number_of_elements
        endif
     end do read_number_of_elements
-
     num_elems_2d=number_of_elements
     if(.not.allocated(elems_2d)) allocate(elems_2d(num_elems_2d))
     if(.not.allocated(elem_nodes_2d)) allocate(elem_nodes_2d(4,num_elems_2d))
@@ -1074,7 +1056,8 @@ contains
        !.......read element number
        read(unit=10, fmt="(a)", iostat=ierror) ctemp1
        if(index(ctemp1, "Element")> 0) then
-          call get_final_integer(ctemp1,ne) !get element number
+!HARI     call get_final_integer(ctemp1,ne) !get element number
+          ne = get_final_integer(ctemp1) !get element number
           elems_2d(noelem)=ne
           noelem=noelem+1
           
@@ -1089,7 +1072,8 @@ contains
                       read(unit=10, fmt="(a)", iostat=ierror) ctemp1 !contains version# for njj=1
                       read(unit=10, fmt="(a)", iostat=ierror) ctemp1 !contains version# for njj=1
                       read(unit=10, fmt="(a)", iostat=ierror) ctemp1 !contains version# for njj=1
-                      call get_final_integer(ctemp1,elem_versn_2d(nn,ne)) !get version#
+!HARI                     call get_final_integer(ctemp1,elem_versn_2d(nn,ne)) !get version#
+                      elem_versn_2d(nn,ne) = get_final_integer(ctemp1) !get version#
                    else
                       elem_versn_2d(nn,ne)= 1
                    endif !nversions
@@ -1275,6 +1259,7 @@ contains
        elem_list,not_1,not_2,npny,nynp,nynr,nyny,data_xi,cyny,sobelov_wts,&
        fit_soln,fix_bcs)
 
+    use arrays,only: node_xyz_2d
 !!! dummy arguments
     integer :: data_on_elem(:,:),ndata_on_elem(:),not_1,not_2,num_depvar,&
          elem_list(0:),npny(0:,:),nynp(:,:,:,:),nynr(0:),nyny(0:,:)
@@ -1307,7 +1292,6 @@ contains
     WG = [7.7160493827160628e-2_dp, 0.12345679012345677_dp, 7.7160493827160628e-2_dp,&
          0.12345679012345677_dp, 0.19753086419753044_dp, 0.12345679012345677_dp,&
          7.7160493827160628e-2_dp, 0.12345679012345677_dp, 7.7160493827160628e-2_dp]
-
     allocate(incr_soln(num_depvar))
     allocate(nony(0:1,num_depvar,2))
     allocate(nyno(0:5,num_depvar,2))
@@ -1317,9 +1301,7 @@ contains
     allocate(GRR(num_depvar))
 !    allocate(GK(num_depvar*num_depvar))
 !    allocate(GKK(num_depvar*num_depvar))
-
     call gauss1(PG)
-
     UPDATE_MATRIX=.TRUE.
     FIRST_A=.TRUE.
     
@@ -1384,7 +1366,6 @@ contains
                    co2=cony(noy2,ny2,2) !coup coeff col mapping
                    !                     i.e. var_no1=a*var_ny1+b*var_ny2
                    nzz=no1+(no2-1)*NOT_1
-                   write(*,*) 'nzz',nzz
                    if(nzz.NE.0) GKK(nzz)=GKK(nzz)+GK(nz)*co1*co2
                 enddo !noy2
              endif
@@ -1394,10 +1375,12 @@ contains
     
     !-------------- solve reduced system of linear equations ---------------
     !Commented out since subroutines called further are temporarily unavailable
-    write(*,*) NOT_1,NOT_2, num_depvar, size(GKK), GKK(1:10), size(GRR), GRR(1:10)
-    write(*,*) size(incr_soln), incr_soln(1:10)
-   !pause
-    !call direct_solver(NOT_1,NOT_1,NOT_2,num_depvar,GKK,GRR,incr_soln,FIRST_A)
+   !write (*,*) NOT_1, NOT_2, num_depvar
+   !stop
+   call solve_linear_system(NOT_1,NOT_1,NOT_2,num_depvar,GKK,GRR,incr_soln,FIRST_A)
+     ! call pmgmres_ilu_cr(NOT_1, num_depvar, GKK(NOT_1), GKK(NOT_2), GKK, &
+     !    incr_soln, GRR, 500, 500,1.d-5,1.d-4,FIRST_A)
+   !write (*,*) NOT_1
     
     do no1=1,NOT_2 ! for each unknown
        do nyo1=1,nyno(0,no1,2)
@@ -1411,10 +1394,8 @@ contains
           ! current fit solution = previous + increment
        enddo !nyo1
     enddo !no1
-
     !*** Copy the fitted solution back into node_xyz_2d
     node_xyz_2d = fit_soln
-
     deallocate(incr_soln)
     deallocate(nony)
     deallocate(nyno)
@@ -1424,13 +1405,12 @@ contains
     deallocate(GRR)
 !    deallocate(GK)
 !    deallocate(GKK)
-
   end subroutine solve_geometry_fit
   
 !!! ##########################################################################        
   
   subroutine project_orthogonal(nd,SQ,xe,xi,inelem)
-
+    use arrays,only: data_xyz
 !!! dummy arguments        
     integer :: nd
     real(dp) :: sq,xe(num_deriv_elem,num_coords),xi(:)
@@ -1650,9 +1630,4 @@ contains
     endif
     
   end subroutine project_orthogonal
-
-!!! ##########################################################################      
-  
-
-
 end module surface_fitting

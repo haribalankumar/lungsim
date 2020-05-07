@@ -18,6 +18,7 @@ set(C_FORTRAN_LIB_SRCS
     utils.f90
     ventilation.f90
     wave_transmission.f90
+    surface_fitting.f90
 )
 
 set(C_C_LIB_SRCS
@@ -37,6 +38,7 @@ set(C_C_LIB_SRCS
     utils.c
     ventilation.c
     wave_transmission.c
+    surface_fitting.c
 )
 
 set(C_LIB_HDRS
@@ -57,6 +59,7 @@ set(C_LIB_HDRS
   utils.h
   ventilation.h
   wave_transmission.h
+  surface_fitting.h
 )
 
 add_library(aether_c_fortran STATIC ${C_FORTRAN_LIB_SRCS} $<TARGET_OBJECTS:aether_obj>)

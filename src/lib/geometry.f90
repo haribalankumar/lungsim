@@ -47,6 +47,7 @@ module geometry
   public make_data_grid
   public reallocate_node_elem_arrays
   public set_initial_volume
+  public list_mesh_statistics
   public triangles_from_surface
   public volume_of_mesh
   public get_final_integer
@@ -1024,6 +1025,763 @@ contains
   end subroutine define_data_geometry
 !
 !###################################################################################
+
+  subroutine list_mesh_statistics(filename)
+  !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_LIST_MESH_STATISTICS" :: LIST_MESH_STATISTICS
+
+!     nindex(i) stores the order type (i=1,2,3,4 for generation, Horsfield
+!     order, Strahler order, diameter-defined Strahler order
+!     respectively) for the current element.
+
+    use arrays,only: dp,data_xyz,data_weight,num_data,elem_ordrs,elem_units_below,&
+         node_xyz,num_units
+    use arrays,only: elem_cnct,elem_field,elem_symmetry,num_elems
+    use indices,only: ne_length,ne_radius
+    use diagnostics,only: enter_exit
+    use other_consts,only: PI
+
+    implicit none
+
+     ! Parameters
+     character(len=*),intent(in) :: filename
+
+     ! Local Variables
+
+     real(dp) :: translate(3)
+     real(dp),allocatable :: data_temp(:,:),vertex_xyz(:,:)
+     real(dp) :: boxrange(3),cofm_surfaces(3),offset=-2.0_dp,point_xyz(3)
+     integer :: np0,np1,np2
+
+     integer :: index(4),ntotaln(20)
+     integer, allocatable :: nbranches(:,:)
+     real(dp),allocatable ::  stats(:,:), branches(:,:), std_dev(:,:,:)
+     real(dp),allocatable ::  sum_mean(:,:,:)
+     real(dp),allocatable ::  n_terminal(:,:,:),ntally(:,:,:)
+     real(dp) :: xp1(3), xp2(3), xp3(3)
+     integer :: i,j,k,nj,nline,nn,num_data_estimate,num_vertices
+     integer :: ne, ne_child
+     logical :: internal
+     character(len=1) :: char1
+     character(len=100) :: writefile
+
+     integer :: ne_flow, N, num_ddp, num_llp
+     integer :: ne0,ne_next,nmax_order,n_order,n_segments,num_in_order(40)
+     integer :: average_term_gen,n_branch,ne1,ne2,ne_major,ne_minor,noelem,NPNE
+     integer :: nbins(5), bins(5), nindex(4)
+     real(dp) :: flow_proportion,mean_diameter,mean_sum_deadspace,mean_sum_pathlength,&
+         ratio_L_D(40),sum_crosssec(40),sum_deadspace,&
+         sum_diameter(40),sum_length(40),sum_pathlength,sum_volume(40),total_length,&
+         max_bin,min_bin
+     real(dp) :: means(20),sdt(20),ratios(4,3),r_squared(4,3)
+     real(dp) :: angle
+
+     real(dp),allocatable :: sizes_from_entry(:,:),diameters(:),lengths(:)
+     real(dp),allocatable :: YREGRESS(:,:)
+     real(dp),parameter :: max_path=310.0_dp,min_path=130.0_dp
+     real(dp),parameter :: max_dead=16.0_dp,min_dead=4.0_dp
+     real(dp),parameter :: undefined = 10000_dp
+
+     integer :: nbin,count_bins(2,100)
+     integer,parameter :: num_bins = 20
+     logical :: add, DIAM_STRAHLER
+     character(len=200) :: opfile
+
+     character(len=60) :: sub_name = 'list_mesh_statistics'
+     call enter_exit(sub_name,1)
+
+     if(.not.allocated(sizes_from_entry)) allocate(sizes_from_entry(2,num_elems))
+     if(.not.allocated(stats)) allocate(stats(21,num_elems))
+     if(.not.allocated(branches)) allocate(branches(10,num_elems))
+     if(.not.allocated(sum_mean)) allocate(sum_mean(4,6,num_elems))
+     if(.not.allocated(n_terminal)) allocate(n_terminal(4,6,num_elems))
+     if(.not.allocated(std_dev)) allocate(std_dev(4,6,num_elems))
+     if(.not.allocated(nbranches)) allocate(nbranches(5,num_elems))
+
+     if(.not.allocated(diameters)) allocate(diameters(num_elems))
+     if(.not.allocated(lengths)) allocate(lengths(num_elems))
+
+     if(.not.allocated(YREGRESS)) allocate(YREGRESS(num_elems,3))
+     if(.not.allocated(ntally)) allocate(ntally(4,6,num_elems))
+
+     sizes_from_entry = 0.0_dp
+
+     num_in_order(:) = 0
+     nmax_order = 0
+     sum_crosssec = 0.0_dp
+     sum_diameter = 0.0_dp
+     sum_length = 0.0_dp
+     sum_volume = 0.0_dp
+     ratio_L_D = 0.0_dp
+
+     n_branch = 0
+     num_ddp = 0
+     num_llp = 0
+
+     do ne = 1,num_elems
+       ne0 = elem_cnct(-1,1,ne)
+       add = .false.
+       if(ne0.eq.0)then !stem of tree
+          add = .true.
+       else if(ne0.ne.0.and.elem_ordrs(2,ne0).ne.elem_ordrs(2,ne))then  !only count as extra branch if at start
+          add = .true.
+       endif
+
+       if(add)then
+          n_branch = n_branch + 1
+          n_order = elem_ordrs(2,ne)
+          nmax_order = max(n_order,nmax_order)
+          num_in_order(n_order) = num_in_order(n_order) + 1
+          ! Add length of all segments along branch, calculate mean diameter
+          n_segments = 1
+          mean_diameter = elem_field(ne_radius,ne) * 2.0_dp
+          total_length = elem_field(ne_length,ne)
+          ne_next=ne
+          do while(elem_cnct(1,0,ne_next).eq.1.and.elem_symmetry(ne_next).eq.1)
+            ne_next = elem_cnct(1,1,ne_next) !next segment
+            total_length = total_length + elem_field(ne_length,ne_next) !sum lengths
+            mean_diameter = mean_diameter  & 
+                     + elem_field(ne_radius,ne_next) * 2.0
+            n_segments = n_segments + 1 !count number of segments in branch
+
+            diameters(ne) = elem_field(ne_radius,ne_next)*2.0
+            lengths(ne) =   elem_field(ne_length,ne_next)
+          enddo
+          mean_diameter = mean_diameter/dble(n_segments)
+
+          ! mean branch diameter
+          sum_diameter(n_order) = sum_diameter(n_order) + mean_diameter
+
+          ! total branch length
+          sum_length(n_order) = sum_length(n_order) + total_length
+
+          ! total branch volume
+          sum_volume(n_order) = sum_volume(n_order) +  & 
+                      total_length*PI*(mean_diameter**2)/4.0
+
+          ! total branch cross-sectional area
+          sum_crosssec(n_order) = sum_crosssec(n_order) +  & 
+                      PI*(mean_diameter**2)/4.0_dp
+
+          ! branch L:D ratio
+          ratio_L_D(n_order) = ratio_L_D(n_order) + total_length/mean_diameter
+
+!! HARI MIGRATED
+!         IF(INDEX(1).GT.1)THEN
+!HBK       nb=NBJ(1,ne)
+           np0=elem_cnct(1,0,ne) !start of parent
+           np1=elem_cnct(1,1,ne) !start node
+           np2=elem_cnct(1,2,ne) !end node
+           DO nj=1,3
+            xp1(nj)=node_xyz(nj,np0)
+            xp2(nj)=node_xyz(nj,np1)
+            xp3(nj)=node_xyz(nj,np2)
+           ENDDO !nj
+           call mesh_angle(angle,xp1,xp2,xp3)
+           stats(2,ne)=angle !temporary storage of angle
+           branches(3,N)=angle*180.d0/PI !store the branching angle to parent
+
+           ntotal=ntotal+1
+           IF(diameters(ne0).GT.0.d0.AND.diameters(ne).GT.0.d0)THEN
+            IF(diameters(ne)/diameters(ne0).LE.1.d0)THEN
+              num_ddp = num_ddp + 1
+            ENDIF
+           ENDIF
+
+           IF(diameters(ne0).GE.4.d0) THEN
+             nbins(1)=nbins(1)+1
+             bins(1)=bins(1)+angle
+           ELSE IF(diameters(ne0).GE.2.d0) THEN
+             nbins(2)=nbins(2)+1
+             bins(2)=bins(2)+angle
+           ELSE IF(diameters(ne0).GE.1.d0) THEN
+             nbins(3)=nbins(3)+1
+             bins(3)=bins(3)+angle
+           ELSE IF(diameters(ne0).GE.0.7d0) THEN
+             nbins(4)=nbins(4)+1
+             bins(4)=bins(4)+angle
+           ENDIF
+!          ELSE
+!            branches(3,N)=undefined
+!          ENDIF
+
+!        ne_next=ne
+!        do while(elem_cnct(1,0,ne_next).eq.1.and.elem_symmetry(ne_next).eq.1)
+
+           stats(5,ne)=lengths(ne)
+           ne_next=ne
+           if(elem_cnct(1,0,ne_next).EQ.1) then
+             ne_next=elem_cnct(1,1,ne_next)
+             stats(5,ne)=stats(5,ne)+lengths(ne_next)
+           endif
+
+          if(elem_cnct(1,0,ne).EQ.0) then
+            N_TERMINAL(1)=N_TERMINAL(1)+1
+          endif
+
+          !CC... Geometric properties of mesh
+          branches(4,N)=undefined !initialise to no rotation angle
+          IF(elem_cnct(-1,0,ne).GT.0.AND.elem_cnct(1,0,ne).GT.1) then
+            ne0=elem_cnct(-1,1,ne)
+            IF(elem_cnct(1,0,ne0).GT.1) then
+              CALL mesh_plane_angle(NBJ,ne,NPNE,angle,XP)
+              branches(4,N)=angle*180.d0/PI !rotation angle
+            ENDIF
+          ENDIF
+
+        endif
+     enddo !ne
+
+!   DO ne=1,num_elems
+!      ne0=elem_cnct(-1,1,ne) !parent
+!      np1=elem_nodes(1,ne)
+!      np2=elem_nodes(2,ne)
+!      if(elem_cnct(1,0,ne).eq.0)then !terminal
+!       elems(ne) = ne_global
+
+
+     !=======================
+     !=======================
+     do noelem = 1,num_elems
+!       ne=NELIST(noelem)
+        ne0=elem_cnct(-1,1,noelem) !parent
+
+        DO j=11,21 !initialise values for the summary statistics
+          stats(j,ne)=undefined
+        ENDDO !j
+        ne0=elem_cnct(-1,1,ne)
+        IF(ne0.NE.0)THEN
+          IF(NORD(1,ne0).NE.NORD(1,ne))THEN
+            IF(stats(5,ne)/stats(5,ne0).LE.1.d0)THEN
+              num_llp=num_llp+1
+            ENDIF
+            stats(19,ne)=stats(5,ne)/stats(5,ne0) !L/Lparent
+            IF(diameters(ne0).GT.0.d0.AND.diameters(ne).GT.0.d0)THEN
+              stats(16,ne)=diameters(ne)/diameters(ne0) !D/Dparent
+            ENDIF
+          ENDIF
+        ENDIF
+
+        IF(elem_cnct(1,0,ne).GE.2) THEN !'bifurcations only
+            ne1=elem_cnct(1,1,ne) !first child
+            ne2=elem_cnct(1,2,ne) !second child
+
+            !XX.. Summary statistics
+            IF(stats(6,ne1).LT.undefined &
+                       .AND.stats(6, ne2).LT.undefined)THEN
+              IF(stats(6,ne1).GE.stats(6,ne2))THEN !diameter classification
+                ne_major=ne1
+                ne_minor=ne2
+              ELSE
+                ne_major=ne2
+                ne_minor=ne1
+              ENDIF
+              IF(stats(2,ne_minor).LT.undefined.AND.stats(2,ne_major).LT.undefined)THEN
+                stats(11,ne)=stats(2,ne_minor)*180.d0/PI
+                stats(12,ne)=stats(2,ne_major)*180.d0/PI
+              ENDIF
+
+              IF(diameters(ne_minor).GT.0.d0.AND. &
+                diameters(ne_major).GT.0.d0)THEN
+                stats(13,ne)=stats(5,ne_minor)/diameters(ne_minor) !L/D minor
+                stats(14,ne)=stats(5,ne_major)/diameters(ne_major) !L/D major
+                stats(15,ne)=diameters(ne_minor)/diameters(ne_major) !minor D / major D
+                stats(17,ne)=diameters(ne_minor)/diameters(ne) !minor D / D parent
+                stats(18,ne)=diameters(ne_major)/diameters(ne) !major D / D parent
+              ENDIF
+              IF(stats(5,ne1).LE.stats(5,ne2))THEN !length classification
+                ne_major=ne1
+                ne_minor=ne2
+              ELSE
+                ne_major=ne2
+                ne_minor=ne1
+              ENDIF !length criteria
+              stats(20,ne)=stats(5,ne_major)/stats(5,ne_minor)
+            ENDIF
+
+!!          IF(DOP)THEN
+!!            WRITE(OP_STRING,'('' ne'',I5,''  angle'',F6.2,'
+!!   &          //'''  L/Dmin'',F5.2,''  L/Dmaj'',F5.2)')
+!!   &          ne,stats(2,ne)*180.d0/PI,stats(13,ne),stats(14,ne)
+!!            CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+!!          ENDIF !DOP
+
+        ENDIF !elem_cnct
+      ENDDO !noelem
+      !=======================
+      !=======================
+
+
+      !C -------------------------------------------------------------
+      !C .. Calculate mean branching statistics from values in branches
+      DO N=1,n_branch
+
+        !i : for generations, Horsfield orders, Strahler orders
+        DO i=1,NUM_SCHEMES
+        nindex(i)=nbranches(i,N)
+
+         !.............................................
+         !C... length and diameter
+         DO j=1,2
+           sum_mean(i,j,nindex(i))=sum_mean(i,j,nindex(i))+ &
+             branches(j,N)
+           IF(i.EQ.3.AND.j.EQ.1)THEN
+             IF(nindex(i).NE.nbranches(5,N))THEN !not same as parent 
+               ntally(i,j,nindex(i))=ntally(i,j,nindex(i))+1
+             ENDIF
+           ELSE
+             ntally(i,j,nindex(i))=ntally(i,j,nindex(i))+1
+           ENDIF
+         ENDDO !j
+         !C.. length and diameter
+         !.............................................
+
+
+         !...........................................
+         !CCC. branching angle and rotation angle(j=3,4)
+         DO j=3,4
+           IF(branches(j,N).LT.undefined)THEN
+             sum_mean(i,j,nindex(i))=sum_mean(i,j,nindex(i))+branches(j,N)
+             ntally(i,j,nindex(i))=ntally(i,j,nindex(i))+1
+           ENDIF
+         ENDDO !j
+         !CCC . branching angle and rotation angle 
+         !...........................................
+
+
+         !..........................................
+         !. ratio of L:D (j=5)
+         j=5
+         IF(branches(j,N).LT.undefined)THEN
+           sum_mean(i,j,nindex(i))=sum_mean(i,j,nindex(i))+branches(j,N)
+           ntally(i,j,nindex(i))=ntally(i,j,nindex(i))+1
+         ENDIF
+         !..........................................
+
+         ENDDO !i
+
+         !C.. Summary statistics from branches
+         DO j=3,5 !branching angle, rotation angle, L/D
+           IF(branches(j,N).LT.undefined)THEN
+             means(j-2)=means(j-2)+branches(j,N)
+           ENDIF
+         ENDDO !j
+
+      ENDDO !N
+     !C------------------------------------------------------------
+     !C.Calculate mean branching statistics from values in branches
+
+      DO N=1,GENM
+        DO j=3,5
+          ntotaln(j-2)=ntotaln(j-2)+ntally(1,j,N)
+       ENDDO !j
+      ENDDO !N
+
+      DO N=1,GENM
+        DO i=1,NUM_SCHEMES
+          DO j=1,5
+            IF(ntally(i,j,N).GT.0)THEN
+              sum_mean(i,j,N)=sum_mean(i,j,N)/DBLE(ntally(i,j,N))
+              NMAX_GEN(i)=N
+             ELSE
+              sum_mean(i,j,N)=0.d0
+            ENDIF
+          ENDDO !j
+        ENDDO !i
+      ENDDO !N
+
+      DO N=1,5
+        IF(nbins(N).NE.0)THEN
+          bins(N)=bins(N)/DBLE(nbins(N))*180.d0/PI
+        ENDIF
+      ENDDO !N
+
+       !CC. Summary statistics from branches
+       DO j=3,5 !branching angle, rotation angle, L/D
+         IF(ntotaln(j-2).NE.0)THEN
+           means(j-2)=means(j-2)/DBLE(ntotaln(j-2))
+         ELSE
+           means(j-2)=0.d0
+         ENDIF
+       ENDDO !j
+
+       i=2 !Horsfield orders
+       j=6 !Nw/Nw-1
+       DO N=1,GENM-1
+         IF(ntally(i,1,N).GT.0.AND.ntally(i,1,N+1).GT.0)THEN
+           sum_mean(i,j,N)=DBLE(ntally(i,1,N))/DBLE(ntally(i,1,N+1))
+         ELSE
+           sum_mean(i,j,N)=0.d0
+         ENDIF
+       ENDDO !N
+
+       !CC. Summary statistics from CE
+       DO noelem=1,NELIST(0)
+         ne=NELIST(noelem)
+         DO j=11,21
+           IF(stats(j,ne).LT.undefined)THEN
+             means(j-7)=means(j-7)+stats(j,ne)
+             ntotaln(j-7)=ntotaln(j-7)+1
+           ENDIF
+         ENDDO !j
+       ENDDO !noelem
+
+       DO j=11,21
+         IF(ntotaln(j-7).GT.0)THEN
+           means(j-7)=means(j-7)/DBLE(ntotaln(j-7))
+         ENDIF
+       ENDDO !j
+       !C... End of mean calculation
+       !---------------------------------------
+
+       !!--------------------------------------------------
+       !C... Calculate the standard deviations
+       !C... Sum of (value-mean)^2
+       DO N=1,n_branch
+          DO i=1,NUM_SCHEMES !for generations, Horsfield orders, Strahler orders
+            nindex(i)=nbranches(i,N)
+            DO j=1,5 !length, diameter, branching angle, rotation angle, L/D
+              IF(branches(j,N).LT.undefined)THEN
+                std_dev(i,j,nindex(i))=std_dev(i,j,nindex(i)) &
+                  +(branches(j,N)-sum_mean(i,j,nindex(i)))**2
+              ENDIF
+            ENDDO !j
+          ENDDO !i
+          DO j=3,5 !branching angle, rotation angle, L/D
+            IF(branches(j,N).LT.undefined)THEN
+              sdt(j-2)=sdt(j-2) + &
+                 (branches(j,N)-means(j-2))**2
+            ENDIF
+          ENDDO !j
+       ENDDO !N
+
+       do noelem = 1,num_elems
+          ne=NELIST(noelem)
+          DO j=11,21
+            IF(stats(j,ne).LT.undefined)THEN
+              sdt(j-7)=sdt(j-7)+(stats(j,ne)-means(j-7))**2
+            ENDIF
+          ENDDO !j
+       ENDDO !noelem
+       !!---------------------------------------------------
+
+
+      !!-----------------------------------------------------
+      !CC. SD = sqrt(1/(n-1)*sum)
+      DO N=1,GENM
+         DO i=1,NUM_SCHEMES !for generations, Horsfield orders, Strahler orders
+           DO j=1,5 !length, diameter, branching angle, rotation angle, L/D
+             IF(ntally(i,j,N).GT.1)THEN
+               std_dev(i,j,N)=DSQRT(std_dev(i,j,N)/DBLE(ntally(i,j,N)-1))
+             ELSE
+               std_dev(i,j,N)=0.d0
+             ENDIF
+           ENDDO !j
+         ENDDO !i
+      ENDDO !N
+
+      DO j=1,13
+        IF(ntotaln(j).GT.1)THEN
+          sdt(j)=DSQRT(sdt(j)/DBLE(ntotaln(j)-1))
+        ENDIF
+      ENDDO !j
+      !CCC...... End of standard deviation calculation
+      !----------------------------------------------------
+
+
+
+     opfile = trim(filename)//'.opmesh'
+     open(10, file=opfile, status='replace')
+
+     write(*,'(/'' Horsfield   #branches     Length     Diameter    ratio L:D    Volume   CrossSecArea'')')
+     write(*,'(''   order                    (mm)        (mm)                     (mL)      (cm^2)'')')
+     write(10,'(/'' Horsfield   #branches     Length     Diameter    ratio L:D    Volume   CrossSecArea'')')
+     write(10,'(''   order                    (mm)        (mm)                     (mL)      (cm^2)'')')
+
+     do n_order = 1,nmax_order
+       write(*,'(i6,i12,f14.2,f12.2,f12.2,f12.2,f12.2)') &
+            n_order,&
+            num_in_order(n_order),&
+            sum_length(n_order)/dble(num_in_order(n_order)),&
+            sum_diameter(n_order)/dble(num_in_order(n_order)),&
+            ratio_L_D(n_order)/dble(num_in_order(n_order)), &
+            sum_volume(n_order)/1.0e+3_dp,&
+            sum_crosssec(n_order)/100.0_dp
+
+       write(10,'(i6,i12,f14.2,f12.2,f12.2,f12.2,f12.2)') &
+            n_order,&
+            num_in_order(n_order),&
+            sum_length(n_order)/dble(num_in_order(n_order)),&
+            sum_diameter(n_order)/dble(num_in_order(n_order)),&
+            ratio_L_D(n_order)/dble(num_in_order(n_order)), &
+            sum_volume(n_order)/1.0e+3_dp,&
+            sum_crosssec(n_order)/100.0_dp
+     enddo
+
+
+       sum_term = 0
+       average_term_gen = 0
+       !=======
+       i=1
+       !=======
+       DO N=1,NMAX_GEN(i)
+          WRITE(10,'(3(I10),5(F8.2,'' ('',F6.2,'')''))') &
+            N,ntally(i,1,N),N_TERMINAL(N),&
+            sum_mean(i,1,N),std_dev(i,1,N), &
+            sum_mean(i,2,N),std_dev(i,2,N),&
+            sum_mean(i,3,N),std_dev(i,3,N),&
+            sum_mean(i,4,N),std_dev(i,4,N),&
+            sum_mean(i,5,N),std_dev(i,5,N)
+
+!         CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+          average_term_gen=average_term_gen + N_TERMINAL(N)*N
+          sum_term=sum_term + N_TERMINAL(N)
+        ENDDO
+        IF(SUM_TERM.GT.0)THEN
+          average_term_gen=average_term_gen/DBLE(sum_term)
+        ELSE
+          average_term_gen=0.d0
+        ENDIF
+
+        WRITE(10,'(/''Horsfield   #branches  Length  Diameter  Branching  Rotation  ratio L:D   Nw/Nw-1'')')
+!       CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+
+        WRITE(10,'('' order   (mm)   (mm)  angle(deg)   angle(deg)'')')
+!       CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+
+        WRITE(10,'(115(''-''))')
+!       CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+
+        !=======
+        i=2
+        !=======
+        DO N=1,NMAX_GEN(i)
+          WRITE(10,'(2(I10),5(F8.2,'' ('',F6.2,'')''),F8.2)') &
+            N,ntally(2,1,N), &
+            sum_mean(i,1,N),std_dev(i,1,N), &
+            sum_mean(i,2,N),std_dev(i,2,N), &
+            sum_mean(i,3,N),std_dev(i,3,N), &
+            sum_mean(i,4,N),std_dev(i,4,N), &
+            sum_mean(i,5,N),std_dev(i,5,N), &
+            sum_mean(i,6,N)
+        ENDDO
+
+        WRITE(10,*) 'Strahler  #branches   Length   Diameter  Branching  Rotation  ratio L:D'
+!       CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+        WRITE(10,*) ' order  (mm)   (mm)  angle(deg)  angle(deg)'
+!       CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+        WRITE(10,*) '------------------------------------------'
+!       CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+
+        !=======
+        i=3
+        !=======
+        DO N=1,NMAX_GEN(i)
+          WRITE(*,'(2(I10),5(F8.2,'' ('',F6.2,'')''))') &
+            N,ntally(3,1,N),&
+            sum_mean(i,1,N),std_dev(i,1,N),&
+            sum_mean(i,2,N),std_dev(i,2,N),&
+            sum_mean(i,3,N),std_dev(i,3,N),&
+            sum_mean(i,4,N),std_dev(i,4,N),&
+            sum_mean(i,5,N),std_dev(i,5,N)
+        ENDDO  
+        
+
+        !---------------------------------------------------
+        IF(DIAM_STRAHLER) THEN
+          WRITE(10,*)  &
+            'Diam-Def  Strahler  #branches   Length  Diameter  Branching   Rotation  ratio  L:D'
+!         CALL WRITES(IOFI,OP_STRING)
+          WRITE(10,*) 'order    (mm)    (mm)   angle(deg)   angle(deg)'
+!         CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+
+          WRITE(10,'(115(''-''))')
+!         CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+          
+          i=4
+          DO N=1,NMAX_GEN(i)
+            WRITE(10,'(2(I10),5(F8.2,'' ('',F6.2,'')''))') &
+              N,ntally(i,1,N), &
+              sum_mean(i,1,N),std_dev(i,1,N), &
+              sum_mean(i,2,N),std_dev(i,2,N), &
+              sum_mean(i,3,N),std_dev(i,3,N), &
+              sum_mean(i,4,N),std_dev(i,4,N), &
+              sum_mean(i,5,N),std_dev(i,5,N)
+!           CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+          ENDDO            
+        ENDIF !DIAM_STRAHLER
+        !---------------------------------------------------
+        
+        !-------------------------------------------------
+        DO i=2,NUM_SCHEMES !Horsfield and Strahler orders
+         DO N=1,NMAX_GEN(i)
+          X(N)=N
+          YREGRESS(N,1)=DLOG10(DBLE(ntally(i,1,N)))
+          YREGRESS(N,2)=DLOG10(sum_mean(i,1,N))
+          YREGRESS(N,3)=DLOG10(sum_mean(i,2,N))
+         ENDDO !N
+         DO j=1,3 !number of branches, length, diameter
+!          CALL LINREGRESS(NMAX_GEN(i),r_squared(i,j),slope,X,YREGRESS(1,j))
+           CALL linear_regression(NMAX_GEN(i),r_squared(i,j),slope,X,YREGRESS(1,j))
+           ratios(i,j)=10.d0**DABS(slope)
+         ENDDO !j
+        ENDDO !i
+        !----------------------------------------------------
+
+       write(10,*) 'terminal generation  =', average_term_gen
+       write(10,*) 'branching angle  =', means(1),sdt(1)
+       write(10,*) 'rotation angle  =', means(2),sdt(2)
+       write(10,*) 'minor angle  =', means(4),sdt(4)
+       write(10,*) 'major angle  =', means(5),sdt(5)
+       write(10,*) 'L/D ratio  =', means(3),sdt(3)
+       write(10,*) 'L/D minor ratio  =', means(6),sdt(6)
+       write(10,*) 'L/D major ratio  =', means(7),sdt(7)
+       write(10,*) 'minorD/majorD=', means(8),sdt(8)
+       write(10,*) 'D/Dparent=', means(9),sdt(9)
+       write(10,*) '%D/Dparent<1 =', DBLE(num_ddp)/DBLE(ntotal)*100.d0
+       write(10,*) 'Dmin/Dparent =', means(10),sdt(10)
+       write(10,*) 'Dmax/Dparent =', means(11),sdt(11)
+       write(10,*) 'L/Lp =', means(12),sdt(12)
+       write(10,*) '%L/Lp<1 =', DBLE(num_llp)/DBLE(NELIST(0)-1)*100.d0
+       write(10,*) 'L1/L2 (L1 < L2) =', means(13),sdt(13)
+
+!          ' branching angle      = '',F7.3,'' ('',F6.3,'')'','
+!          ' rotation angle       = '',F7.3,'' ('',F6.3,'')'','
+!          ' minor angle          = '',F7.3,'' ('',F6.3,'')'','
+!          ' major angle          = '',F7.3,'' ('',F6.3,'')'','
+!          ' L/D                  = '',F7.3,'' ('',F6.3,'')'','
+!          ' L/D minor child      = '',F7.3,'' ('',F6.3,'')'','
+!          ' L/D major child      = '',F7.3,'' ('',F6.3,'')'','
+!          ' minor D/major D      = '',F7.3,'' ('',F6.3,'')'','
+!          ' D/Dparent            = '',F7.3,'' ('',F6.3,'')'','
+!          ' %D/Dparent  < 1      = '',F7.3,'
+!          ' Dmin/Dparent         = '',F7.3,'' ('',F6.3,'')'','
+!          ' Dmaj/Dparent         = '',F7.3,'' ('',F6.3,'')'','
+!          ' L/Lp                 = '',F7.3,'' ('',F6.3,'')'','
+!          ' %L/Lp < 1            = '',F7.3,'
+!          ' L1/L2 (L1 < L2)      = '',F7.3,'' ('',F6.3,'')'')')
+!          average_term_gen,means(1),sdt(1),&
+!          means(2),sdt(2),&
+!          means(4),sdt(4),&
+!          means(5),sdt(5),&
+!          means(3),sdt(3),means(6),sdt(6),&
+!          means(7),sdt(7),means(8),sdt(8),means(9),sdt(9),&
+!          DBLE(num_ddp)/DBLE(ntotal)*100.d0,means(10),sdt(10),&
+!          means(11),sdt(11),&
+!          means(12),sdt(12),&
+!          DBLE(num_llp)/DBLE(NELIST(0)-1)*100.d0,&
+!          means(13),sdt(13)
+
+!       CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+
+        WRITE(10,*) ' Rb Horsfield    = ',ratios(2,1),r_squared(2,1)
+        WRITE(10,*) ' Rl Horsfield    = ',ratios(2,2),r_squared(2,2)
+        WRITE(10,*) ' Rd Horsfield    = ',ratios(2,3),r_squared(2,3)
+        WRITE(10,*) ' Rb Strahler    = ',ratios(3,1),r_squared(3,1)
+        WRITE(10,*) ' Rl Strahler    = ',ratios(3,2),r_squared(3,2)
+        WRITE(10,*) ' Rd Strahler    = ',ratios(3,3),r_squared(3,3)
+
+!       WRITE(OP_STRING,'('' Rb Strahler    = '',F7.3,'
+!    '    //''' Rsq ='',F6.3,'//
+!    '    '/'' Rl Strahler          = '',F7.3,'' Rsq = '',F6.3,'//
+!    '    '/'' Rd Strahler          = '',F7.3,'' Rsq = '',F6.3,'//
+!    '    '/'' Rb Horsfield         = '',F7.3,'' Rsq = '',F6.3,'//
+!    '    '/'' Rl Horsfield         = '',F7.3,'' Rsq = '',F6.3,'//
+!    '    '/'' Rd Horsfield         = '',F7.3,'' Rsq = '',F6.3)')
+!    '    ratios(3,1),r_squared(3,1),ratios(3,2),r_squared(3,2),
+!         ratios(3,3),r_squared(3,3),&
+!         ratios(2,1),r_squared(2,1),&
+!         ratios(2,2),r_squared(2,2),&
+!         ratios(2,3),r_squared(2,3)
+
+! CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+
+        IF(DIAM_STRAHLER) THEN
+         write(10,*) 'Rb diam-def Strahler=',ratios(4,1),'Rsq=',r_squared(4,1)
+         write(10,*) 'Rl diam-def Strahler=',ratios(4,2),'Rsq=',r_squared(4,2)
+         write(10,*) 'Rd diam-def Strahler=',ratios(4,3),'Rsq=',r_squared(4,3)
+!         WRITE(OP_STRING,
+!    &      '('' Rb diam-def Strahler  ='',F7.3,'' Rsq = '',F6.3,'//
+!    &      '/'' Rl diam-def Strahler  ='',F7.3,'' Rsq = '',F6.3,'//
+!    &      '/'' Rd diam-def Strahler  ='',F7.3,'' Rsq = '',F6.3)')
+!    &      ratios(4,1),r_squared(4,1),&
+!           ratios(4,2),r_squared(4,2),&
+!           ratios(4,3),r_squared(4,3)
+!         CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+        ENDIF
+
+        WRITE(10,*) 'mean angle Dp 4.0+   = ',bins(1)
+        WRITE(10,*) 'mean angle Dp 3.0+   = ',bins(2)
+        WRITE(10,*) 'mean angle Dp 2.0+   = ',bins(3)
+        WRITE(10,*) 'mean angle Dp 1.0+   = ',bins(4)
+        WRITE(10,*) 'mean angle Dp 0.7+   = ',bins(5)
+
+!       WRITE(OP_STRING,'('' mean angle Dp 4.0+   = '',F7.3,'//
+!    &    '/''  mean angle Dp 3.0+   = '',F7.3,'//
+!    &    '/''  mean angle Dp 2.0+   = '',F7.3,'//
+!    &    '/''  mean angle Dp 1.0+   = '',F7.3,'//
+!    &    '/''  mean angle Dp 0.7+   = '',F7.3)')
+!    '    (bins(j),j=1,5)
+
+
+     write(*,'('' Total anatomical dead space = '',f8.2, '' mL'')') &
+            sum(sum_volume)/1.0e+3_dp*3.0_dp/2.0_dp
+
+     mean_sum_pathlength = 0.0_dp
+     mean_sum_deadspace = 0.0_dp
+
+     count_bins = 0
+
+     do ne = 1,num_elems
+       if(elem_cnct(1,0,ne).eq.0)then !terminal
+          sum_pathlength = elem_field(ne_length,ne)
+!!        sum_deadspace = elem_field(ne_vol,ne)
+!!        flow_proportion = 1.0_dp
+          ne0 = elem_cnct(-1,1,ne)
+          ne_child = ne
+          do while (ne0.ne.0) !while not the stem
+             sum_pathlength = sum_pathlength + elem_field(ne_length,ne0)
+!!           flow_proportion = flow_proportion * elem_field(ne_flow,ne_child)/ &
+!!                elem_field(ne_flow,ne0)
+!!           sum_deadspace = sum_deadspace + elem_field(ne_vol,ne0) * flow_proportion
+             ne_child = ne0
+             ne0 = elem_cnct(-1,1,ne0)
+          enddo !while not the stem
+
+          mean_sum_pathlength = mean_sum_pathlength + sum_pathlength
+          mean_sum_deadspace = mean_sum_deadspace + sum_deadspace
+          do nbin = 1,num_bins
+             min_bin = min_path+(nbin-1)*(max_path-min_path)/num_bins
+             max_bin = min_path+nbin*(max_path-min_path)/num_bins
+             if(sum_pathlength.gt.min_bin.and.sum_pathlength.le.max_bin) count_bins(1,nbin) = count_bins(1,nbin)+1
+             min_bin = min_dead+(nbin-1)*(max_dead-min_dead)/num_bins
+             max_bin = min_dead+nbin*(max_dead-min_dead)/num_bins
+             if(sum_deadspace.gt.min_bin.and.sum_deadspace.le.max_bin) count_bins(2,nbin) = count_bins(2,nbin)+1
+          enddo
+       endif !terminal
+     enddo !ne
+     mean_sum_pathlength = mean_sum_pathlength/elem_units_below(1)
+     mean_sum_deadspace = mean_sum_deadspace/elem_units_below(1)
+
+     write(*,'('' Mean pathlength to acinus = '',f8.2, '' mm; ['',f8.2,''-'',f8.2,'']'')') &
+         mean_sum_pathlength,min_path,max_path
+     write(*,'('' Mean deadspace to acinus  = '',f8.2, '' mL; ['',f8.2,''-'',f8.2,'']'')') &
+         mean_sum_deadspace/1.0+3_dp,min_dead/1.0+3_dp,max_dead/1.0+3_dp
+
+
+     write(*,'(''........................... '')')
+     write(*,'('' N_bin     N_PL_bin    N_Vd_bin'')')
+     do nbin = 1,num_bins
+       write(*,'(i4,i12,i12)') nbin,count_bins(1,nbin),count_bins(2,nbin)
+     enddo
+
+     close(10)
+     deallocate(sizes_from_entry)
+     deallocate(stats)
+     deallocate(branches)
+
+  end subroutine list_mesh_statistics
+
+
 ! 
   subroutine triangles_from_surface(num_triangles,num_vertices,surface_elems,triangle,vertex_xyz)
       
@@ -2513,9 +3271,355 @@ contains
   end subroutine get_four_nodes
 
 ! 
+! ##########################################################################      
+!
+  subroutine mesh_angle(ANGLE,XP1,XP2,XP3)
+
+!#### Subroutine: MESH_ANGLE
+!###  Description:
+!###    MESH_ANGLE calculates the angle between vectors XP1-XP2 and XP2-XP3
+    use arrays,only: dp,elems,elem_cnct,elem_direction,elem_field
+    use diagnostics,only: enter_exit
+    character(len=60) :: sub_name
+
+    IMPLICIT NONE
+!   INCLUDE 'geom00.cmn'
+!   INCLUDE 'tol00.cmn'
+
+    real(dp),INTENT(IN) :: ANGLE,XP1(3),XP2(3),XP3(3)
+
+    !Local variables
+    INTEGER :: nj
+    REAL(dp) :: SCALAR,U(3),V(3)
+
+    sub_name = 'mesh_angle'
+    call enter_exit(sub_name,1)
+
+
+     DO nj=1,3
+       U(nj)=XP2(nj)-XP1(nj) !end - start
+       V(nj)=XP3(nj)-XP2(nj) !end - start
+     ENDDO !nj
+
+      CALL normalise(3,U)
+      CALL normalise(3,V)
+
+
+      ANGLE=scalar_f(3,U,V)
+      ANGLE=MAX(-1.d0,ANGLE)
+      ANGLE=MIN(1.d0,ANGLE)
+      ANGLE=DACOS(ANGLE)
+
+    call enter_exit(sub_name,2)
+  end subroutine mesh_angle
+
+
+! ##########################################################################
+!
+  subroutine mesh_plane_angle(NBJ,ne,NPNE,ANGLE,XP)
+
+!#### Subroutine: MESH_PLANE_ANGLE
+!###  Description:
+!###  MESH_PLANE_ANGLE calculates the rotation angle between the
+!###  branching planes of a parent (ne) and its child branches.
+
+    use arrays,only: dp,elem_cnct
+
+      IMPLICIT NONE
+
+!!     INCLUDE 'b00.cmn'
+!!     INCLUDE 'b01.cmn'
+!!     INCLUDE 'cbdi02.cmn'
+!!     INCLUDE 'geom00.cmn'
+!!     INCLUDE 'tol00.cmn'
+
+!!  Parameter list
+      INTEGER :: NBJ(NJM,NEM),ne,NPNE(NNM,NBFM,NEM),&
+        NXI(-NIM:NIM,0:NEIM,0:NEM)
+      REAL*8 ANGLE,XP(NKM,NVM,NJM,NPM)
+
+!! Local variables
+      INTEGER nb,ne0,ne1,nj,np1,np2,np3,np4,np5
+      REAL*8 norm_1(4),norm_2(4),SCALAR,XPOINT(3,5),temp
+      REAL*8 CALC_ANGLE
+
+      nb=NBJ(1,ne)
+      ne0=NXI(-1,1,ne) !parent element
+      np1=NPNE(1,nb,ne) !start node
+      np2=NPNE(2,nb,ne) !end node
+      ne1=NXI(1,1,ne0)
+
+!!     IF(DOP)THEN
+!!       WRITE(OP_STRING,'(5(I6))') nb,ne0,np1,np2,ne1
+!!       CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+!!     ENDIF
+
+      IF(ne1.EQ.ne) ne1=NXI(1,2,ne0) !sibling
+      np3=NPNE(2,nb,ne1) !end node of sibling
+      np4=NPNE(2,nb,NXI(1,1,ne)) !end node of first child
+      np5=NPNE(2,nb,NXI(1,2,ne)) !end node of second child
+
+      DO nj=1,3
+        XPOINT(nj,1)=XP(1,1,nj,np1)
+        XPOINT(nj,2)=XP(1,1,nj,np2)
+        XPOINT(nj,3)=XP(1,1,nj,np3)
+        XPOINT(nj,4)=XP(1,1,nj,np4)
+        XPOINT(nj,5)=XP(1,1,nj,np5)
+      ENDDO !nj
+
+      CALL plane_from_3_points(norm_1,2,XPOINT(1,1),XPOINT(1,2),XPOINT(1,3))
+      CALL normalise2(3,norm_1,temp) !unit vector
+
+      CALL plane_from_3_points(norm_2,2,XPOINT(1,2),XPOINT(1,4),XPOINT(1,5))
+      CALL normalise2(3,norm_2,temp)
+
+      ANGLE=CALC_ANGLE(norm_1,norm_2)
+
+  end subroutine mesh_plane_angle
+
+!
+
+
 
 ! ##########################################################################      
 ! 
+
+  subroutine normalise(NUMCMPTS,VECTOR)
+
+!#### Subroutine: NORMALISE
+!###  Description:
+!###  NORMALISE divides the components of VECTOR by it's length
+
+    use arrays,only: dp
+    use diagnostics,only: enter_exit
+    character(len=60) :: sub_name
+
+    implicit none
+!!  INCLUDE 'cbdi02.cmn'
+!!  INCLUDE 'tol00.cmn'
+
+!!  Parameter List
+    integer :: NUMCMPTS
+    real(dp) :: VECTOR(*)
+
+!!  Local Variables
+    INTEGER :: ni
+    REAL(dp) :: VECTOR_LENGTH
+
+    sub_name = 'normalise'
+
+    VECTOR_LENGTH=0.0d0
+     DO ni=1,NUMCMPTS
+       VECTOR_LENGTH=VECTOR_LENGTH+VECTOR(ni)*VECTOR(ni)
+     ENDDO !ni
+     VECTOR_LENGTH=DSQRT(VECTOR_LENGTH)
+
+     IF(VECTOR_LENGTH.GT.ZERO_TOL) THEN
+       DO ni=1,NUMCMPTS
+         VECTOR(ni)=VECTOR(ni)/VECTOR_LENGTH
+       ENDDO !ni
+     ELSE
+       WRITE(*,*) ' >>WARNING: Cannot normalise a zero length vector'
+     ENDIF
+
+    call enter_exit(sub_name,2)
+  end subroutine normalise
+
+!
+! ##########################################################################      
+!
+  subroutine linear_regression(N,r_squared,slope,X,Y)
+
+!#### Subroutine: LINREGRESS
+!###  Description:
+!###    Calculates linear regression equation and r-squared 
+!###    correlation coefficient for a set of data.
+
+!*** Created by Kelly Burrowes, March 2003.
+    use arrays,only: dp
+    use diagnostics,only: enter_exit
+
+    implicit none
+!!  INCLUDE 'b01.cmn'
+!!  INCLUDE 'cbdi02.cmn'
+!!  Parameter list
+    integer, INTENT(IN) :: N
+    real(dp), INTENT(IN) :: X(N),Y(N)
+    real(dp), INTENT(OUT) :: r_squared,slope
+
+!!  Local variables
+    integer :: i
+    REAL(dp) :: AX,AY,intercept,R,SXX,SXY,SYY
+    REAL(dp) :: XSUM,XT,XXSUM,XYSUM,YSUM,YT
+
+    sub_name = 'linear_regression'
+    call enter_exit(sub_name,1)
+
+      YSUM=0.d0
+      XSUM=0.d0
+      XXSUM=0.d0
+      XYSUM=0.d0
+      DO i=1,N
+        YSUM=YSUM+Y(i)
+        XSUM=XSUM+X(i)
+        XYSUM=XYSUM+X(i)*Y(i)
+        XXSUM=XXSUM+X(i)*X(i)
+      ENDDO !N
+
+!... calculate least squares estimate of straight line thru solution
+      slope=(XYSUM-XSUM*YSUM/N)/(XXSUM-XSUM*XSUM/N)
+      intercept=(YSUM/N)-(slope*XSUM/N)
+
+!... calculate r-squared correlation coefficient
+!... see Numerical Recipes, Fortran 77, 2nd edition, page 632.      
+      AX=XSUM/N !mean of X
+      AY=YSUM/N !mean of Y
+      SXX=0.d0
+      SYY=0.d0
+      SXY=0.d0
+      DO i=1,N
+        XT=X(i)-AX
+        YT=Y(i)-AY
+        SXX=SXX+XT**2.d0
+        SYY=SYY+YT**2.d0
+        SXY=SXY+XT*YT
+      ENDDO
+      R=SXY/DSQRT(SXX*SYY)
+      r_squared=R**2
+!     IF(DOP)THEN
+!       WRITE(OP_STRING,'('' Gradient: '',F8.3,'' Intercept: '','
+!    '    //' F8.3,''R-squared correlation'',F8.3)')
+!    '    slope,intercept,r_squared
+!       CALL WRITES(IODI,OP_STRING,ERROR,*9999)
+!     ENDIF
+
+    call enter_exit(sub_name,2)
+  end subroutine linear_regression
+
+
+!
+! ##########################################################################      
+!
+
+  subroutine normalise2(NUMCMPTS,VECTOR,VECTOR_LENGTH)
+
+!#### Subroutine: NORMALISE2
+!###  Description:
+!###    NORMALISE divides the components of VECTOR by its length
+!###    and returns the original length
+
+      IMPLICIT NONE
+!!     INCLUDE 'cbdi02.cmn'
+!!     INCLUDE 'tol00.cmn'
+
+!!!     Parameter List
+      INTEGER NUMCMPTS
+      REAL*8 VECTOR(*)
+
+!!     Local Variables
+      INTEGER ni
+      REAL*8 VECTOR_LENGTH
+    sub_name = 'normalise2'
+    call enter_exit(sub_name,1)
+
+      VECTOR_LENGTH=0.0d0
+      DO ni=1,NUMCMPTS
+        VECTOR_LENGTH=VECTOR_LENGTH+VECTOR(ni)*VECTOR(ni)
+      ENDDO !ni
+      VECTOR_LENGTH=DSQRT(VECTOR_LENGTH)
+
+      IF(VECTOR_LENGTH.GT.ZERO_TOL) THEN
+        DO ni=1,NUMCMPTS
+          VECTOR(ni)=VECTOR(ni)/VECTOR_LENGTH
+        ENDDO !ni
+      ELSE
+        WRITE(*,*) 'WARNING: Cannot normalise a zero length vector'
+      ENDIF
+
+  end subroutine normalise2
+
+
+! ##########################################################################      
+! 
+  subroutine plane_from_3_points(NORML,NORMALTYPE,POINT1,POINT2,POINT3)
+
+!#### Subroutine: PLANE_FROM_3_PTS
+!###  Description:
+!###    PLANE_FROM_3_PTS finds the equation of a plane in three
+!###    dimensions and a vector normal to the plane from three
+!###    non-collinear points.
+!###    NORMALTYPE=1 for raw normal and plane equation
+!###    NORMALTYPE=2 for unit normal and plane equation
+!###    The coefficients represent aX + bY + cZ + d = 0
+!###    NORML(1)=a,NORML(2)=b,NORML(3)=c,NORML(4)=d
+!***  Created by Martin Buist, Jan 1997
+
+
+!!    INCLUDE 'cbdi02.cmn'
+!!    INCLUDE 'geom00.cmn'
+!!    INCLUDE 'tol00.cmn'
+
+    use arrays,only: dp
+    use diagnostics,only: enter_exit
+
+    IMPLICIT NONE
+
+!!  Parameter list
+    INTEGER :: NORMALTYPE
+    REAL*8 POINT1(3),POINT2(3),POINT3(3),NORML(4)
+    CHARACTER ERROR*(*)
+
+!!  Local variables
+    INTEGER :: nj
+    REAL(dp) :: DIFF1(3),DIFF2(3),NORMSIZE
+    LOGICAL COLLINEAR
+
+    sub_name = 'plane_from_3_points'
+    call enter_exit(sub_name,1)
+
+
+! Check for collinearity
+      COLLINEAR=.FALSE.
+      call check_collinear(POINT1,POINT2,POINT3,collinear)
+      IF(.NOT.collinear) THEN
+        DO nj=1,NJT
+          DIFF1(nj)=POINT2(nj)-POINT1(nj)
+          DIFF2(nj)=POINT2(nj)-POINT3(nj)
+        ENDDO !nj
+
+        NORML(1)=(DIFF1(2)*DIFF2(3))-(DIFF1(3)*DIFF2(2))
+        NORML(2)=(DIFF1(3)*DIFF2(1))-(DIFF1(1)*DIFF2(3))
+        NORML(3)=(DIFF1(1)*DIFF2(2))-(DIFF1(2)*DIFF2(1))
+
+        IF(NORMALTYPE.EQ.2) THEN
+          NORMSIZE=0.0d0
+          DO nj=1,NJT
+            NORMSIZE=NORMSIZE+(NORML(nj)**2.0d0)
+          ENDDO !nj
+          NORMSIZE=DSQRT(NORMSIZE)
+          DO nj=1,NJT
+            NORML(nj)=NORML(nj)/NORMSIZE
+          ENDDO !nj
+        ENDIF
+
+        NORML(4)=0.0d0
+        DO nj=1,NJT
+          NORML(4)=NORML(4)-(NORML(nj)*POINT1(nj))
+        ENDDO !nj
+
+      ELSE !Colinear
+
+        DO nj=1,4
+          NORML(nj)=0.0d0
+        ENDDO !nj
+
+      ENDIF
+
+    call enter_exit(sub_name,2)
+  end subroutine plane_from_3_points
+! 
+! ##########################################################################      
+
 
   function inlist(item,ilist)
 !!! dummy arguments
