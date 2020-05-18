@@ -1086,6 +1086,7 @@ contains
 
      integer :: nbin,count_bins(2,100)
      integer,parameter :: num_bins = 20
+     integer,parameter :: NUM_SCHEMES = 3
      logical :: add, DIAM_STRAHLER
      character(len=200) :: opfile
 
@@ -1100,12 +1101,12 @@ contains
      if(.not.allocated(std_dev)) allocate(std_dev(4,6,num_elems))
 
 ! QUESTION FOR MHT - are these still needed ?
-! MHT, Do we need still have NORD, nbranches ?
+! What is NBJ and NPNE ???
+! MHT, Do we need still have nbranches ?
 ! QUESTION: WHat is NMAX_GEN and NUM_SCHEMES ?
 
-     if(.not.allocated(n_terminal)) allocate(n_terminal(4,6,num_elems))
+     if(.not.allocated(n_terminal)) allocate(n_terminal(num_elems))
      if(.not.allocated(nbranches)) allocate(nbranches(5,num_elems))
-     if(.not.allocated(NORD)) allocate(NORD(5,num_elems))
 
      if(.not.allocated(diameters)) allocate(diameters(num_elems))
      if(.not.allocated(lengths)) allocate(lengths(num_elems))
@@ -1260,7 +1261,7 @@ contains
         ENDDO !j
         ne0=elem_cnct(-1,1,ne)
         IF(ne0.NE.0)THEN
-          IF(NORD(1,ne0).NE.NORD(1,ne))THEN
+          IF(elem_ordrs(1,ne0).NE.elem_ordrs(1,ne))THEN
             IF(stats(5,ne)/stats(5,ne0).LE.1.d0)THEN
               num_llp=num_llp+1
             ENDIF
