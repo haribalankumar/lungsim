@@ -1630,7 +1630,7 @@ contains
        real(dp) :: translate(3)
        real(dp),allocatable :: data_temp(:,:),vertex_xyz(:,:)
        real(dp) :: boxrange(3),cofm_surfaces(3),offset=-2.0_dp,point_xyz(3)
-       integer :: np0,np1,np2
+       integer :: np0,np1,np2,nd1,nd2,nd11,nd22,nd12,nd21
 
        integer :: index(4),ntotaln(20)
        integer, allocatable :: nbranches(:,:)
@@ -1812,9 +1812,27 @@ contains
             !CC... Geometric properties of mesh
             branches(4,N)=undefined !initialise to no rotation angle
             IF(elem_cnct(-1,0,ne).GT.0.AND.elem_cnct(1,0,ne).GT.1) then
-              ne0=elem_cnct(-1,1,ne)
+              ne0=elem_cnct(-1,1,ne) !parent
               IF(elem_cnct(1,0,ne0).GT.1) then
-                CALL mesh_plane_angle(NBJ,ne,NPNE,angle,XP)
+                np0=elem_cnct(1,0,ne0) !start of parent  bsha
+                np1=elem_nodes(1,ne0)  !bsha
+                np2=elem_nodes(2,np0)  !bsha
+                nd1=elem_cnct(1,1,ne0) ! daughter1  bsha
+                nd11=elem_nodes(1,nd1) ! bsha  node1 daughter1
+                nd12=elem_nodes(2,nd1) ! bsha  node2 daughter1
+                nd2=elem_cnct(1,2,ne0) ! daughter2  bsha
+                nd21=elem_nodes(1,nd2) ! bsha  node1 daughter2
+                nd22=elem_nodes(2,nd2) ! bsha  node2 daughter2
+                !DO nj=1,3
+                ! xp1(nj)=node_xyz(nj,np0)
+                ! xp2(nj)=node_xyz(nj,np1)
+                ! xp3(nj)=node_xyz(nj,np2)
+                ! xp4(nj)=node_xyz(nj,)
+                ! xp5(nj)=node_xyz()
+                !ENDDO !nj
+
+!bsha                CALL mesh_plane_angle(NBJ,ne,NPNE,angle,XP)
+                angle = rotation_angle(np1, np2, nd12, nd21, nd22)
                 branches(4,N)=angle*180.d0/PI !rotation angle
               ENDIF
             ENDIF
@@ -2445,6 +2463,8 @@ contains
           REAL(dp) :: AX,AY,intercept,R,SXX,SXY,SYY
           REAL(dp) :: XSUM,XT,XXSUM,XYSUM,YSUM,YT
 
+          character(len=60) :: sub_name
+
           sub_name = 'linear_regression'
           call enter_exit(sub_name,1)
 
@@ -2512,6 +2532,9 @@ contains
       !!     Local Variables
             INTEGER ni
             REAL*8 VECTOR_LENGTH
+
+            character(len=60) :: sub_name
+
           sub_name = 'normalise2'
           call enter_exit(sub_name,1)
 

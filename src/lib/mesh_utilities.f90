@@ -19,7 +19,7 @@ module mesh_utilities
        distance_between_points,make_plane_from_3points,mesh_a_x_eq_b,ph3,pl1,&
        point_internal_to_surface,scalar_product_3,scalar_triple_product,scale_mesh,&
        unit_norm_to_plane_two_vectors,unit_norm_to_three_points,unit_vector,&
-       vector_length,volume_internal_to_surface,mesh_angle,mesh_plane_angle
+       vector_length,volume_internal_to_surface,mesh_angle!,mesh_plane_angle
 
 contains
 
@@ -832,69 +832,69 @@ contains
   !
   ! ##########################################################################
   !
-          subroutine mesh_plane_angle(NBJ,ne,NPNE,ANGLE,XP)
-
-        !#### Subroutine: MESH_PLANE_ANGLE
-        !###  Description:
-        !###  MESH_PLANE_ANGLE calculates the rotation angle between the
-        !###  branching planes of a parent (ne) and its child branches.
-
-            use arrays,only: dp,elem_cnct
-
-!bsha              !IMPLICIT NONE
-
-        !!     INCLUDE 'b00.cmn'
-        !!     INCLUDE 'b01.cmn'
-        !!     INCLUDE 'cbdi02.cmn'
-        !!     INCLUDE 'geom00.cmn'
-        !!     INCLUDE 'tol00.cmn'
-
-        !!  Parameter list
-              INTEGER :: NBJ(NJM,NEM),ne,NPNE(NNM,NBFM,NEM),&
-                NXI(-NIM:NIM,0:NEIM,0:NEM)
-              REAL*8 ANGLE,XP(NKM,NVM,NJM,NPM)
-
-        !! Local variables
-              INTEGER nb,ne0,ne1,nj,np1,np2,np3,np4,np5
-              REAL*8 norm_1(4),norm_2(4),SCALAR,XPOINT(3,5),temp
-  !bsha            REAL*8 CALC_ANGLE   seems like it is not needed to be defined
-
-              nb=NBJ(1,ne)
-              ne0=NXI(-1,1,ne) !parent element
-              np1=NPNE(1,nb,ne) !start node
-              np2=NPNE(2,nb,ne) !end node
-              ne1=NXI(1,1,ne0)
-
-        !!     IF(DOP)THEN
-        !!       WRITE(OP_STRING,'(5(I6))') nb,ne0,np1,np2,ne1
-        !!       CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
-        !!     ENDIF
-
-              IF(ne1.EQ.ne) ne1=NXI(1,2,ne0) !sibling
-              np3=NPNE(2,nb,ne1) !end node of sibling
-              np4=NPNE(2,nb,NXI(1,1,ne)) !end node of first child
-              np5=NPNE(2,nb,NXI(1,2,ne)) !end node of second child
-
-              DO nj=1,3
-                XPOINT(nj,1)=XP(1,1,nj,np1)
-                XPOINT(nj,2)=XP(1,1,nj,np2)
-                XPOINT(nj,3)=XP(1,1,nj,np3)
-                XPOINT(nj,4)=XP(1,1,nj,np4)
-                XPOINT(nj,5)=XP(1,1,nj,np5)
-              ENDDO !nj
-
-              CALL make_plane_from_3points(norm_1,2,XPOINT(1,1),XPOINT(1,2),XPOINT(1,3))
-              CALL normalise2(4,norm_1,temp) !unit vector
-              !norm_1 = unit_vector(norm_1) ! added by bsha replaced for normalise
-              CALL make_plane_from_3points(norm_2,2,XPOINT(1,2),XPOINT(1,4),XPOINT(1,5))
-              CALL normalise2(4,norm_2,temp)
-              !norm_2 = unit_vector(norm_2) ! added by bsha replaced for normalise
-
-  !bsha            ANGLE=CALC_ANGLE(norm_1,norm_2) this seems wrong, because CALC_ANGLE is not a funtion nor a subroutine
-  ! and defined as a double-precision variable above
-              ANGLE = angle_btwn_vectors(norm_1, norm_2) !bsha replacing the CALC_ANGLE
-
-          end subroutine mesh_plane_angle
+!           subroutine mesh_plane_angle(NBJ,ne,NPNE,ANGLE,XP)
+!
+!         !#### Subroutine: MESH_PLANE_ANGLE
+!         !###  Description:
+!         !###  MESH_PLANE_ANGLE calculates the rotation angle between the
+!         !###  branching planes of a parent (ne) and its child branches.
+!
+!             use arrays,only: dp,elem_cnct
+!
+! !bsha              !IMPLICIT NONE
+!
+!         !!     INCLUDE 'b00.cmn'
+!         !!     INCLUDE 'b01.cmn'
+!         !!     INCLUDE 'cbdi02.cmn'
+!         !!     INCLUDE 'geom00.cmn'
+!         !!     INCLUDE 'tol00.cmn'
+!
+!         !!  Parameter list
+!               INTEGER :: NBJ(NJM,NEM),ne,NPNE(NNM,NBFM,NEM),&
+!                 NXI(-NIM:NIM,0:NEIM,0:NEM)
+!               REAL*8 ANGLE,XP(NKM,NVM,NJM,NPM)
+!
+!         !! Local variables
+!               INTEGER nb,ne0,ne1,nj,np1,np2,np3,np4,np5
+!               REAL*8 norm_1(4),norm_2(4),SCALAR,XPOINT(3,5),temp
+!   !bsha            REAL*8 CALC_ANGLE   seems like it is not needed to be defined
+!
+!               nb=NBJ(1,ne)
+!               ne0=NXI(-1,1,ne) !parent element
+!               np1=NPNE(1,nb,ne) !start node
+!               np2=NPNE(2,nb,ne) !end node
+!               ne1=NXI(1,1,ne0)
+!
+!         !!     IF(DOP)THEN
+!         !!       WRITE(OP_STRING,'(5(I6))') nb,ne0,np1,np2,ne1
+!         !!       CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+!         !!     ENDIF
+!
+!               IF(ne1.EQ.ne) ne1=NXI(1,2,ne0) !sibling
+!               np3=NPNE(2,nb,ne1) !end node of sibling
+!               np4=NPNE(2,nb,NXI(1,1,ne)) !end node of first child
+!               np5=NPNE(2,nb,NXI(1,2,ne)) !end node of second child
+!
+!               DO nj=1,3
+!                 XPOINT(nj,1)=XP(1,1,nj,np1)
+!                 XPOINT(nj,2)=XP(1,1,nj,np2)
+!                 XPOINT(nj,3)=XP(1,1,nj,np3)
+!                 XPOINT(nj,4)=XP(1,1,nj,np4)
+!                 XPOINT(nj,5)=XP(1,1,nj,np5)
+!               ENDDO !nj
+!
+!               CALL make_plane_from_3points(norm_1,2,XPOINT(1,1),XPOINT(1,2),XPOINT(1,3))
+!               CALL normalise2(4,norm_1,temp) !unit vector
+!               !norm_1 = unit_vector(norm_1) ! added by bsha replaced for normalise
+!               CALL make_plane_from_3points(norm_2,2,XPOINT(1,2),XPOINT(1,4),XPOINT(1,5))
+!               CALL normalise2(4,norm_2,temp)
+!               !norm_2 = unit_vector(norm_2) ! added by bsha replaced for normalise
+!
+!   !bsha            ANGLE=CALC_ANGLE(norm_1,norm_2) this seems wrong, because CALC_ANGLE is not a funtion nor a subroutine
+!   ! and defined as a double-precision variable above
+!               ANGLE = angle_btwn_vectors(norm_1, norm_2) !bsha replacing the CALC_ANGLE
+!
+!           end subroutine mesh_plane_angle
 
 
 
