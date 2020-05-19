@@ -1666,7 +1666,7 @@ contains
 
        integer :: nbin,count_bins(2,100)
        integer,parameter :: num_bins = 20
-       integer,parameter :: NUM_SCHEMES = 3
+       integer,parameter :: NUM_SCHEMES = 3  !bsha Generation, Horsefield, Strahler
        logical :: add, DIAM_STRAHLER
        character(len=200) :: opfile
 
