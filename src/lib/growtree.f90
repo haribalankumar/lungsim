@@ -1620,7 +1620,7 @@ contains
       use diagnostics,only: enter_exit
       use other_consts,only: PI
 
-      implicit none
+!bsha      implicit none
 
        ! Parameters
        character(len=*),intent(in) :: filename
@@ -1814,7 +1814,7 @@ contains
             IF(elem_cnct(-1,0,ne).GT.0.AND.elem_cnct(1,0,ne).GT.1) then
               ne0=elem_cnct(-1,1,ne)
               IF(elem_cnct(1,0,ne0).GT.1) then
-                !CALL mesh_plane_angle(NBJ,ne,NPNE,angle,XP)
+                CALL mesh_plane_angle(NBJ,ne,NPNE,angle,XP)
                 branches(4,N)=angle*180.d0/PI !rotation angle
               ENDIF
             ENDIF
@@ -2373,8 +2373,274 @@ contains
     end subroutine list_mesh_statistics
 
 !
+! ##########################################################################
+!
+      subroutine mesh_angle(ANGLE,XP1,XP2,XP3)
+
+    !#### Subroutine: MESH_ANGLE
+    !###  Description:
+    !###    MESH_ANGLE calculates the angle between vectors XP1-XP2 and XP2-XP3
+        use arrays,only: dp,elems,elem_cnct,elem_direction,elem_field
+        use diagnostics,only: enter_exit
+
+        IMPLICIT NONE
+    !   INCLUDE 'geom00.cmn'
+    !   INCLUDE 'tol00.cmn'
+
+        real(dp),INTENT(IN) :: ANGLE
+        real(dp),INTENT(IN) :: XP1(3),XP2(3),XP3(3)
+
+        !Local variables
+        INTEGER :: nj
+        REAL(dp) :: SCALAR,U(3),V(3)
+        character(len=60) :: sub_name
+
+        sub_name = 'mesh_angle'
+        call enter_exit(sub_name,1)
+
+
+         DO nj=1,3
+           U(nj)=XP2(nj)-XP1(nj) !end - start
+           V(nj)=XP3(nj)-XP2(nj) !end - start
+         ENDDO !nj
+
+          CALL normalise(3,U)
+          CALL normalise(3,V)
+
+
+          ANGLE=scalar_f(3,U,V)
+          ANGLE=MAX(-1.d0,ANGLE)
+          ANGLE=MIN(1.d0,ANGLE)
+          ANGLE=DACOS(ANGLE)
+
+        call enter_exit(sub_name,2)
+      end subroutine mesh_angle
+
+!
+! ##########################################################################
+!
+        subroutine mesh_plane_angle(NBJ,ne,NPNE,ANGLE,XP)
+
+      !#### Subroutine: MESH_PLANE_ANGLE
+      !###  Description:
+      !###  MESH_PLANE_ANGLE calculates the rotation angle between the
+      !###  branching planes of a parent (ne) and its child branches.
+
+          use arrays,only: dp,elem_cnct
+
+            IMPLICIT NONE
+
+      !!     INCLUDE 'b00.cmn'
+      !!     INCLUDE 'b01.cmn'
+      !!     INCLUDE 'cbdi02.cmn'
+      !!     INCLUDE 'geom00.cmn'
+      !!     INCLUDE 'tol00.cmn'
+
+      !!  Parameter list
+            INTEGER :: NBJ(NJM,NEM),ne,NPNE(NNM,NBFM,NEM),&
+              NXI(-NIM:NIM,0:NEIM,0:NEM)
+            REAL*8 ANGLE,XP(NKM,NVM,NJM,NPM)
+
+      !! Local variables
+            INTEGER nb,ne0,ne1,nj,np1,np2,np3,np4,np5
+            REAL*8 norm_1(4),norm_2(4),SCALAR,XPOINT(3,5),temp
+            REAL*8 CALC_ANGLE
+
+            nb=NBJ(1,ne)
+            ne0=NXI(-1,1,ne) !parent element
+            np1=NPNE(1,nb,ne) !start node
+            np2=NPNE(2,nb,ne) !end node
+            ne1=NXI(1,1,ne0)
+
+      !!     IF(DOP)THEN
+      !!       WRITE(OP_STRING,'(5(I6))') nb,ne0,np1,np2,ne1
+      !!       CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
+      !!     ENDIF
+
+            IF(ne1.EQ.ne) ne1=NXI(1,2,ne0) !sibling
+            np3=NPNE(2,nb,ne1) !end node of sibling
+            np4=NPNE(2,nb,NXI(1,1,ne)) !end node of first child
+            np5=NPNE(2,nb,NXI(1,2,ne)) !end node of second child
+
+            DO nj=1,3
+              XPOINT(nj,1)=XP(1,1,nj,np1)
+              XPOINT(nj,2)=XP(1,1,nj,np2)
+              XPOINT(nj,3)=XP(1,1,nj,np3)
+              XPOINT(nj,4)=XP(1,1,nj,np4)
+              XPOINT(nj,5)=XP(1,1,nj,np5)
+            ENDDO !nj
+
+            CALL make_plane_from_3points(norm_1,2,XPOINT(1,1),XPOINT(1,2),XPOINT(1,3))
+            CALL normalise2(3,norm_1,temp) !unit vector
+
+            CALL make_plane_from_3points(norm_2,2,XPOINT(1,2),XPOINT(1,4),XPOINT(1,5))
+            CALL normalise2(3,norm_2,temp)
+
+            ANGLE=CALC_ANGLE(norm_1,norm_2)
+
+        end subroutine mesh_plane_angle
+
+
+!
+! ##########################################################################
+!
+
+        subroutine normalise(NUMCMPTS,VECTOR)
+
+      !#### Subroutine: NORMALISE
+      !###  Description:
+      !###  NORMALISE divides the components of VECTOR by it's length
+
+          use arrays,only: dp
+          use diagnostics,only: enter_exit
+          character(len=60) :: sub_name
+
+!bsha          !implicit none
+      !!  INCLUDE 'cbdi02.cmn'
+      !!  INCLUDE 'tol00.cmn'
+
+      !!  Parameter List
+          integer :: NUMCMPTS
+          real(dp) :: VECTOR(*)
+
+      !!  Local Variables
+          INTEGER :: ni
+          REAL(dp) :: VECTOR_LENGTH
+
+          sub_name = 'normalise'
+
+          VECTOR_LENGTH=0.0d0
+           DO ni=1,NUMCMPTS
+             VECTOR_LENGTH=VECTOR_LENGTH+VECTOR(ni)*VECTOR(ni)
+           ENDDO !ni
+           VECTOR_LENGTH=DSQRT(VECTOR_LENGTH)
+
+           IF(VECTOR_LENGTH.GT.ZERO_TOL) THEN
+             DO ni=1,NUMCMPTS
+               VECTOR(ni)=VECTOR(ni)/VECTOR_LENGTH
+             ENDDO !ni
+           ELSE
+             WRITE(*,*) ' >>WARNING: Cannot normalise a zero length vector'
+           ENDIF
+
+          call enter_exit(sub_name,2)
+        end subroutine normalise
+
+!
+! ##########################################################################
+!
+        subroutine linear_regression(N,r_squared,slope,X,Y)
+
+      !#### Subroutine: LINREGRESS
+      !###  Description:
+      !###    Calculates linear regression equation and r-squared
+      !###    correlation coefficient for a set of data.
+
+      !*** Created by Kelly Burrowes, March 2003.
+          use arrays,only: dp
+          use diagnostics,only: enter_exit
+
+!bsha          !implicit none
+      !!  INCLUDE 'b01.cmn'
+      !!  INCLUDE 'cbdi02.cmn'
+      !!  Parameter list
+          integer, INTENT(IN) :: N
+          real(dp), INTENT(IN) :: X(N),Y(N)
+          real(dp), INTENT(OUT) :: r_squared,slope
+
+      !!  Local variables
+          integer :: i
+          REAL(dp) :: AX,AY,intercept,R,SXX,SXY,SYY
+          REAL(dp) :: XSUM,XT,XXSUM,XYSUM,YSUM,YT
+
+          sub_name = 'linear_regression'
+          call enter_exit(sub_name,1)
+
+            YSUM=0.d0
+            XSUM=0.d0
+            XXSUM=0.d0
+            XYSUM=0.d0
+            DO i=1,N
+              YSUM=YSUM+Y(i)
+              XSUM=XSUM+X(i)
+              XYSUM=XYSUM+X(i)*Y(i)
+              XXSUM=XXSUM+X(i)*X(i)
+            ENDDO !N
+
+      !... calculate least squares estimate of straight line thru solution
+            slope=(XYSUM-XSUM*YSUM/N)/(XXSUM-XSUM*XSUM/N)
+            intercept=(YSUM/N)-(slope*XSUM/N)
+
+      !... calculate r-squared correlation coefficient
+      !... see Numerical Recipes, Fortran 77, 2nd edition, page 632.
+            AX=XSUM/N !mean of X
+            AY=YSUM/N !mean of Y
+            SXX=0.d0
+            SYY=0.d0
+            SXY=0.d0
+            DO i=1,N
+              XT=X(i)-AX
+              YT=Y(i)-AY
+              SXX=SXX+XT**2.d0
+              SYY=SYY+YT**2.d0
+              SXY=SXY+XT*YT
+            ENDDO
+            R=SXY/DSQRT(SXX*SYY)
+            r_squared=R**2
+      !     IF(DOP)THEN
+      !       WRITE(OP_STRING,'('' Gradient: '',F8.3,'' Intercept: '','
+      !    '    //' F8.3,''R-squared correlation'',F8.3)')
+      !    '    slope,intercept,r_squared
+      !       CALL WRITES(IODI,OP_STRING,ERROR,*9999)
+      !     ENDIF
+
+          call enter_exit(sub_name,2)
+        end subroutine linear_regression
+
+
+!
+! ##########################################################################
+!
+
+        subroutine normalise2(NUMCMPTS,VECTOR,VECTOR_LENGTH)
+
+      !#### Subroutine: NORMALISE2
+      !###  Description:
+      !###    NORMALISE divides the components of VECTOR by its length
+      !###    and returns the original length
+
+!bsha            IMPLICIT NONE
+      !!     INCLUDE 'cbdi02.cmn'
+      !!     INCLUDE 'tol00.cmn'
+
+      !!!     Parameter List
+            INTEGER NUMCMPTS
+            REAL*8 VECTOR(*)
+
+      !!     Local Variables
+            INTEGER ni
+            REAL*8 VECTOR_LENGTH
+          sub_name = 'normalise2'
+          call enter_exit(sub_name,1)
+
+            VECTOR_LENGTH=0.0d0
+            DO ni=1,NUMCMPTS
+              VECTOR_LENGTH=VECTOR_LENGTH+VECTOR(ni)*VECTOR(ni)
+            ENDDO !ni
+            VECTOR_LENGTH=DSQRT(VECTOR_LENGTH)
+
+            IF(VECTOR_LENGTH.GT.ZERO_TOL) THEN
+              DO ni=1,NUMCMPTS
+                VECTOR(ni)=VECTOR(ni)/VECTOR_LENGTH
+              ENDDO !ni
+            ELSE
+              WRITE(*,*) 'WARNING: Cannot normalise a zero length vector'
+            ENDIF
+
+        end subroutine normalise2
+!
 !##############################################################################
-!  
+!
 
 end module growtree
 
