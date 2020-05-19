@@ -2379,7 +2379,7 @@ contains
 
     !#### Subroutine: MESH_ANGLE
     !###  Description:
-    !###    MESH_ANGLE calculates the angle between vectors XP1-XP2 and XP2-XP3
+    !###  MESH_ANGLE calculates the angle between vectors XP1-XP2 and XP2-XP3
         use arrays,only: dp,elems,elem_cnct,elem_direction,elem_field
         use diagnostics,only: enter_exit
 
@@ -2404,8 +2404,10 @@ contains
            V(nj)=XP3(nj)-XP2(nj) !end - start
          ENDDO !nj
 
-          CALL normalise(3,U)
-          CALL normalise(3,V)
+!bsha          !CALL normalise(3,U)
+        call unit_vector(U) ! added by bsha replaced for normalise
+!bsha          !CALL normalise(3,V)
+        call unit_vector(V) ! added by bsha replaced for normalise
 
 
           ANGLE=scalar_f(3,U,V)
@@ -2444,7 +2446,7 @@ contains
       !! Local variables
             INTEGER nb,ne0,ne1,nj,np1,np2,np3,np4,np5
             REAL*8 norm_1(4),norm_2(4),SCALAR,XPOINT(3,5),temp
-            REAL*8 CALC_ANGLE
+!bsha            REAL*8 CALC_ANGLE   seems like it is not needed to be defined
 
             nb=NBJ(1,ne)
             ne0=NXI(-1,1,ne) !parent element
@@ -2471,12 +2473,15 @@ contains
             ENDDO !nj
 
             CALL make_plane_from_3points(norm_1,2,XPOINT(1,1),XPOINT(1,2),XPOINT(1,3))
-            CALL normalise2(3,norm_1,temp) !unit vector
-
+!bsha            CALL normalise2(3,norm_1,temp) !unit vector
+            call unit_vector(norm_1) ! added by bsha replaced for normalise
             CALL make_plane_from_3points(norm_2,2,XPOINT(1,2),XPOINT(1,4),XPOINT(1,5))
-            CALL normalise2(3,norm_2,temp)
+!bsha            CALL normalise2(3,norm_2,temp)
+            call unit_vector(norm_2) ! added by bsha replaced for normalise
 
-            ANGLE=CALC_ANGLE(norm_1,norm_2)
+!bsha            ANGLE=CALC_ANGLE(norm_1,norm_2) this seems wrong, because CALC_ANGLE is not a funtion nor a subroutine
+! and defined as a double-precision variable above
+            ANGLE = angle_btwn_vectors(norm_1, norm_2) !bsha replacing the CALC_ANGLE
 
         end subroutine mesh_plane_angle
 
