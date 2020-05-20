@@ -1632,7 +1632,7 @@ contains
        real(dp) :: boxrange(3),cofm_surfaces(3),offset=-2.0_dp,point_xyz(3)
        integer :: np0,np1,np2,nd1,nd2,nd11,nd22,nd12,nd21
 
-       integer :: index(4),ntotaln(20)
+       integer :: index(4),ntotaln(20),ntotal
        integer, allocatable :: nbranches(:,:)
        real(dp),allocatable ::  stats(:,:), branches(:,:), std_dev(:,:,:)
        real(dp),allocatable ::  sum_mean(:,:,:)
@@ -1648,7 +1648,7 @@ contains
        character(len=100) :: writefile
 
        integer :: ne_flow, N, num_ddp, num_llp
-       integer :: ne0,ne_next,nmax_order,n_order,n_segments,num_in_order(40)
+       integer :: ne0,ne_next,nmax_order,n_order,n_segments,num_in_order(40),X(N),NMAX_GEN(4) !NMAX_GEN & X(N) added by bsha
        integer :: average_term_gen,n_branch,ne1,ne2,ne_major,ne_minor,noelem,NPNE
        integer :: nbins(5), bins(5), nindex(4)
        real(dp) :: flow_proportion,mean_diameter,mean_sum_deadspace,mean_sum_pathlength,&
@@ -1707,6 +1707,7 @@ contains
        n_branch = 0
        num_ddp = 0
        num_llp = 0
+       ntotal = 0 ! added by bsha - seems like it's a counter so initialised from zero
 
        do ne = 1,num_elems
          ne0 = elem_cnct(-1,1,ne)
@@ -1851,7 +1852,7 @@ contains
        !=======================
        !=======================
        do noelem = 1,num_elems
-  !       ne=NELIST(noelem)
+  !       ne=elems(noelem)
           ne0=elem_cnct(-1,1,noelem) !parent
 
           DO j=11,21 !initialise values for the summary statistics
@@ -2024,8 +2025,8 @@ contains
          ENDDO !N
 
          !CC. Summary statistics from CE
-         DO noelem=1,NELIST(0)
-           ne=NELIST(noelem)
+         DO noelem=1,elems(0)
+           ne=elems(noelem)
            DO j=11,21
              IF(stats(j,ne).LT.undefined)THEN
                means(j-7)=means(j-7)+stats(j,ne)
@@ -2064,7 +2065,7 @@ contains
          ENDDO !N
 
          do noelem = 1,num_elems
-            ne=NELIST(noelem)
+            ne=elems(noelem)
             DO j=11,21
               IF(stats(j,ne).LT.undefined)THEN
                 sdt(j-7)=sdt(j-7)+(stats(j,ne)-means(j-7))**2
@@ -2250,7 +2251,7 @@ contains
          write(10,*) 'Dmin/Dparent =', means(10),sdt(10)
          write(10,*) 'Dmax/Dparent =', means(11),sdt(11)
          write(10,*) 'L/Lp =', means(12),sdt(12)
-         write(10,*) '%L/Lp<1 =', DBLE(num_llp)/DBLE(NELIST(0)-1)*100.d0
+         write(10,*) '%L/Lp<1 =', DBLE(num_llp)/DBLE(elems(0)-1)*100.d0
          write(10,*) 'L1/L2 (L1 < L2) =', means(13),sdt(13)
 
   !          ' branching angle      = '',F7.3,'' ('',F6.3,'')'','
@@ -2277,7 +2278,7 @@ contains
   !          DBLE(num_ddp)/DBLE(ntotal)*100.d0,means(10),sdt(10),&
   !          means(11),sdt(11),&
   !          means(12),sdt(12),&
-  !          DBLE(num_llp)/DBLE(NELIST(0)-1)*100.d0,&
+  !          DBLE(num_llp)/DBLE(elems(0)-1)*100.d0,&
   !          means(13),sdt(13)
 
   !       CALL WRITES(IOFI,OP_STRING,ERROR,*9999)
