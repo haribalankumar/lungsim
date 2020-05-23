@@ -1648,7 +1648,7 @@ contains
        character(len=100) :: writefile
 
        integer :: ne_flow, N, num_ddp, num_llp
-       integer :: ne0,ne_next,nmax_order,n_order,n_segments,num_in_order(40),X(N),NMAX_GEN(4) !NMAX_GEN & X(N) added by bsha
+       integer :: ne0,ne_next,nmax_order,n_order,n_segments,num_in_order(40),NMAX_GEN(4) !NMAX_GEN added by bsha
        integer :: average_term_gen,n_branch,ne1,ne2,ne_major,ne_minor,noelem,NPNE
        integer :: nbins(5), bins(5), nindex(4)
        real(dp) :: flow_proportion,mean_diameter,mean_sum_deadspace,mean_sum_pathlength,&
@@ -1659,7 +1659,7 @@ contains
        real(dp) :: angle, slope
 
        real(dp),allocatable :: sizes_from_entry(:,:),diameters(:),lengths(:)
-       real(dp),allocatable :: YREGRESS(:,:)
+       real(dp),allocatable :: YREGRESS(:,:), X(:) ! added by bsha
        real(dp),parameter :: max_path=310.0_dp,min_path=130.0_dp
        real(dp),parameter :: max_dead=16.0_dp,min_dead=4.0_dp
        real(dp),parameter :: undefined = 10000_dp
@@ -2224,7 +2224,8 @@ contains
           !-------------------------------------------------
           DO i=2,NUM_SCHEMES !Horsfield and Strahler orders
            DO N=1,NMAX_GEN(i)
-            X(N)=N
+            !X(N)=N bsha
+            allocate(X(N)) !bsha
             YREGRESS(N,1)=DLOG10(DBLE(ntally(i,1,N)))
             YREGRESS(N,2)=DLOG10(sum_mean(i,1,N))
             YREGRESS(N,3)=DLOG10(sum_mean(i,2,N))
