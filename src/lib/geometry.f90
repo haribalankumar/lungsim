@@ -39,9 +39,11 @@ module geometry
   public define_rad_from_geom
   public element_connectivity_1d
   public element_connectivity_2d
+  public import_node_geometry_2d
   public inlist
   public evaluate_ordering
   public get_final_real
+  public get_local_elem
   public get_local_node_f
   public make_data_grid
   public make_2d_vessel_from_1d
@@ -994,6 +996,87 @@ contains
 
 !!!#############################################################################
 
+  subroutine import_node_geometry_2d(NODEFILE)
+    !*define_node_geometry_2d:* Reads in an exnode file to define surface nodes
+    !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_DEFINE_NODE_GEOMETRY_2D" :: DEFINE_NODE_GEOMETRY_2D
+
+    character(len=*),intent(in) :: NODEFILE
+    !     Local Variables
+    integer :: i,ierror,index_location,np,np_global,num_versions,nv
+    character(len=132) :: ctemp1,readfile
+    character(len=60) :: sub_name
+
+    ! --------------------------------------------------------------------------
+
+    sub_name = 'import_node_geometry_2d'
+    call enter_exit(sub_name,1)
+
+    if(index(NODEFILE, ".exnode")> 0) then !full filename is given
+       readfile = NODEFILE
+    else ! need to append the correct filename extension
+       readfile = trim(NODEFILE)//'.exnode'
+    endif
+
+    open(10, file=readfile, status='old')
+
+    !.....get the total number of nodes.
+    num_nodes_2d = 0
+    read_number_of_nodes : do !define a do loop name
+       read(unit=10, fmt="(a)", iostat=ierror) ctemp1 !read a line into ctemp1
+       if(ierror<0) exit !ierror<0 means end of file
+       if(index(ctemp1, "Node:")> 0) then !keyword "Node:" is found in ctemp1
+          num_nodes_2d = num_nodes_2d+1
+       endif
+    end do read_number_of_nodes
+    close(10)
+
+!!!allocate memory to arrays that require node number
+    if(.not.allocated(nodes_2d)) allocate(nodes_2d(num_nodes_2d))
+    if(.not.allocated(node_xyz_2d)) allocate(node_xyz_2d(4,10,3,num_nodes_2d))
+    if(.not.allocated(node_versn_2d)) allocate(node_versn_2d(num_nodes_2d))
+    nodes_2d = 0
+    node_xyz_2d = 0.0_dp
+    node_versn_2d = 0
+
+    !.....read the coordinate, derivative, and version information for each node.
+    open(10, file=readfile, status='old')
+    np = 0
+    num_versions = 1
+    read_a_node : do !define a do loop name
+       !.......read node number
+       read(unit=10, fmt="(a)", iostat=ierror) ctemp1
+       if(index(ctemp1, "Derivatives") > 0)then
+          index_location = index(ctemp1, "Versions")
+          if(index_location > 0) then
+             read(ctemp1(index_location+9:index_location+10), '(i2)', iostat=ierror) num_versions
+          else
+             num_versions = 1  ! the default
+          endif
+       endif
+       if(index(ctemp1, "Node:")> 0) then
+          np_global = get_final_integer(ctemp1) !get node number
+          np = np+1
+          nodes_2d(np) = np_global
+          node_versn_2d(np) = num_versions
+
+          !.......read coordinates
+          do i =1,3 ! for the x,y,z coordinates
+             do nv = 1,node_versn_2d(np)
+                read(unit=10, fmt=*, iostat=ierror) node_xyz_2d(1:4,nv,i,np)
+             end do !nv
+          end do !i
+       endif !index
+       if(np.ge.num_nodes_2d) exit read_a_node
+    end do read_a_node
+
+    close(10)
+
+    call enter_exit(sub_name,2)
+
+  end subroutine import_node_geometry_2d
+
+!!!#############################################################################
+
   subroutine define_data_geometry(datafile)
     !*define_data_geometry:* reads data points from a file
     !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_DEFINE_DATA_GEOMETRY" :: DEFINE_DATA_GEOMETRY
@@ -1012,8 +1095,14 @@ contains
     !set the counted number of data points to zero
     ncount = 0
     
+    if(index(datafile, ".ipdata")> 0) then !full filename is given
+       readfile = datafile
+    else ! need to append the correct filename extension
+       readfile = trim(datafile)//'.ipdata'
+    endif
+
     !readfile = trim(datafile)//'.ipdata'
-    open(10, file=datafile, status='old')
+    open(10, file=readfile, status='old')
     read(unit=10, fmt="(a)", iostat=ierror) buffer
     
 !!! first run through to count the number of data points
@@ -1034,7 +1123,7 @@ contains
     
 !!! read the data point information
     !readfile = trim(datafile)//'.ipdata'
-    open(10, file=datafile, status='old')
+    open(10, file=readfile, status='old')
     read(unit=10, fmt="(a)", iostat=ierror) buffer
     
     !set the counted number of data points to zero
@@ -1093,7 +1182,7 @@ contains
     real(dp),allocatable :: vertex_xyz(:,:)
     ! Local variables
     integer,parameter :: ndiv = 3
-    integer :: i,index1,index2,j,ne,nmax_1,nmax_2,num_surfaces, &
+    integer :: i,index1,index2,j,ne,nelem,nmax_1,nmax_2,num_surfaces, &
          num_tri_vert,nvertex_row,step_1,step_2
     real(dp) :: X(3),xi(3)
     logical :: four_nodes
@@ -1114,7 +1203,8 @@ contains
     num_vertices = 0
     num_tri_vert = 0 
 
-    do ne=1,num_elems_2d
+    do nelem=1, num_surfaces
+       ne = surface_elems(nelem)
        four_nodes = .false.
        repeat = '0_0'
        if(elem_nodes_2d(1,ne).eq.elem_nodes_2d(2,ne)) repeat = '1_0'
@@ -1209,7 +1299,7 @@ contains
     enddo
     
     write(*,'('' Made'',I8,'' triangles to cover'',I6,'' surface elements'')') &
-         num_triangles,num_elems_2d
+         num_triangles,num_surfaces !num_elems_2d
     
     call enter_exit(sub_name,2)
     
@@ -2812,7 +2902,8 @@ contains
        if(.not.allocated(line_versn_2d)) allocate(line_versn_2d(2,3,num_lines_2d))
        if(.not.allocated(lines_in_elem)) allocate(lines_in_elem(0:4,num_lines_2d))
        if(.not.allocated(nodes_in_line)) allocate(nodes_in_line(3,0:3,num_lines_2d))
-       if(.not.allocated(arclength)) allocate(arclength(3,num_lines_2d)) 
+!      if(.not.allocated(arclength)) allocate(arclength(num_lines_2d))
+
        lines_in_elem=0
        lines_2d=0
        nodes_in_line=0

@@ -12,6 +12,7 @@ SHO_PUBLIC void define_elem_geometry_2d(const char *ELEMFILE, const char *SF_OPT
 SHO_PUBLIC void define_mesh_geometry_test();
 SHO_PUBLIC void define_node_geometry(const char *NODEFILE);
 SHO_PUBLIC void define_node_geometry_2d(const char *NODEFILE);
+SHO_PUBLIC void import_node_geometry_2d(const char *NODEFILE);
 SHO_PUBLIC void define_data_geometry(const char *DATAFILE);
 SHO_PUBLIC void group_elem_parent_term(int ne_parent);
 SHO_PUBLIC void make_data_grid(int surface_elems, double spacing, int to_export, const char *filename, const char *groupname);

@@ -188,7 +188,7 @@ contains
 
 !!!###################################################################################
 
-  subroutine make_2d_vessel_from_1d_c(elemlist, elemlist_len) bind(C, name="make_2d_vessel_from_1d_c")
+  subroutine make_2d_vessel_from_1d_c(elemlist_len, elemlist ) bind(C, name="make_2d_vessel_from_1d_c")
     use geometry, only: make_2d_vessel_from_1d
     implicit none
 
@@ -202,7 +202,7 @@ contains
 #endif
 
   end subroutine make_2d_vessel_from_1d_c
-  
+
 !
 !###################################################################################
 !
@@ -271,6 +271,31 @@ contains
 #endif
 
   end subroutine define_node_geometry_2d_c
+
+!
+!###################################################################################
+!
+  subroutine import_node_geometry_2d_c(NODEFILE, filename_len) bind(C, name="import_node_geometry_2d_c")
+
+    use iso_c_binding, only: c_ptr
+    use utils_c, only: strncpy
+    use other_consts, only: MAX_FILENAME_LEN
+    use geometry, only: import_node_geometry_2d
+    implicit none
+
+    integer,intent(in) :: filename_len
+    type(c_ptr), value, intent(in) :: NODEFILE
+    character(len=MAX_FILENAME_LEN) :: filename_f
+
+    call strncpy(filename_f, NODEFILE, filename_len)
+
+#if defined _WIN32 && defined __INTEL_COMPILER
+    call so_import_node_geometry_2d(filename_f)
+#else
+    call import_node_geometry_2d(filename_f)
+#endif
+
+  end subroutine import_node_geometry_2d_c
 
 !
 !###################################################################################
