@@ -242,9 +242,12 @@ contains
     ! indices for node_field
     num_nj=0 !number of nodal fields
     ! indices for elem_field
-    num_ne=2 !number of element fields
+    num_ne=4 !number of element fields
     ne_radius=1 !radius of airway
     ne_length=2 !length of airway
+    ne_length = 3 !length of airway
+    ne_a_A = 4 !length of airway
+
     ! indices for unit_field
     num_nu=0
     call enter_exit(sub_name,2)

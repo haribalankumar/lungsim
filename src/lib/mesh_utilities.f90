@@ -15,11 +15,13 @@ module mesh_utilities
   private
 
   public  area_between_three_points,area_between_two_vectors,calc_branch_direction,&
-       angle_btwn_points,angle_btwn_vectors,calc_scale_factors_2d,check_colinear_points,cross_product,&
+       angle_btwn_points,angle_btwn_vectors,bifurcation_element,&
+       calc_scale_factors_2d,check_colinear_points,cross_product,&
+        direction_point_to_point,&
        distance_between_points,make_plane_from_3points,mesh_a_x_eq_b,ph3,pl1,&
-       point_internal_to_surface,scalar_product_3,scalar_triple_product,scale_mesh,&
+       point_internal_to_surface,scalar_product_3,scalar_triple_product,scale_mesh,stem_element,&
        unit_norm_to_plane_two_vectors,unit_norm_to_three_points,unit_vector,&
-       vector_length,volume_internal_to_surface
+       vector_length,volume_internal_to_surface, which_child
 
 contains
 
@@ -547,6 +549,22 @@ contains
     
   end function cross_product
   
+##########################################################################   
+
+  function direction_point_to_point(point_start,point_end)
+
+    real(dp),intent(in) :: point_start(:),point_end(:)
+
+    real(dp) :: vector(3)
+    real(dp) :: direction_point_to_point(3)
+
+    vector(1:3) = point_end(1:3) - point_start(1:3)
+    vector(1:3) = unit_vector(vector)
+    direction_point_to_point = vector
+
+  end function direction_point_to_point
+
+
 !!!###############################################################
   
   function scalar_triple_product(A,B,C)
@@ -782,6 +800,88 @@ contains
 
   end function point_internal_to_surface
 
+
+!!!#############################################################################
+
+  function terminal_element(ne)
+    !*terminal element:* returns 'true' if a 1d element has no elements adjacent
+    ! in the Xi+1 direction
+    integer,intent(in) :: ne
+    logical :: terminal_element
+
+    ! --------------------------------------------------------------------------
+
+    if(elem_cnct(1,0,ne).eq.0)then
+       terminal_element = .true.
+    else
+       terminal_element = .false.
+    endif
+
+  end function terminal_element
+
+!!!#############################################################################
+
+  function stem_element(ne)
+    !*stem element:* returns 'true' if a 1d element has no elements adjacent
+    ! in the Xi-1 direction
+    integer,intent(in) :: ne
+    logical :: stem_element
+
+    ! --------------------------------------------------------------------------
+
+    if(elem_cnct(-1,0,ne).eq.0)then
+       stem_element = .true.
+    else
+       stem_element = .false.
+    endif
+
+  end function stem_element
+
+
+!!!#############################################################################
+
+  function bifurcation_element(ne)
+    !*bifurcation element:* returns 'true' if a 1d element has two elements 
+    ! adjacent in the Xi+1 direction (i.e. parent of a bifurcation)
+    integer,intent(in) :: ne
+    logical :: bifurcation_element
+
+    ! --------------------------------------------------------------------------
+
+
+    if(ne.eq.0)then
+       bifurcation_element = .false.
+    elseif(elem_cnct(1,0,ne).eq.2)then
+       bifurcation_element = .true.
+    else
+       bifurcation_element = .false.
+    endif
+
+  end function bifurcation_element
+
+!!!#############################################################################
+
+  function which_child(ne,ne0)
+    !*which child:* returns '1' if ne is recorded as the first child element of
+    ! element ne0, and '2' if the second
+    integer,intent(in) :: ne,ne0
+    integer :: which_child
+
+    ! --------------------------------------------------------------------------
+
+    if(elem_cnct(1,1,ne0).eq.ne) then
+       which_child = 1
+    elseif(elem_cnct(1,2,ne0).eq.ne) then
+       which_child = 2
+    else
+       write(*,'('' Warning! element'',i6,'' is not a child element of'',i6)') &
+            ne,ne0
+       which_child = 0
+    endif
+
+  end function which_child
+
+!!!#############################################################################
 
 
 end module mesh_utilities

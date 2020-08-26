@@ -24,6 +24,9 @@ void element_connectivity_1d_c(void);
 void evaluate_ordering_c(void);
 void set_initial_volume_c(int *Gdirn, double *COV, double *total_volume, double *Rmax, double *Rmin);
 void volume_of_mesh_c(double *volume_model, double *volume_tree);
+void write_elem_geometry_2d_c(const char *ELEMFILE, int *filename_len);
+void write_geo_file_c(int *ntype, const char *GEOFILE, int *filename_len);
+void write_node_geometry_2d_c(const char *NODEFILE, int *filename_len);
 
 void add_mesh(const char *AIRWAY_MESHFILE)
 {
@@ -89,6 +92,7 @@ void make_data_grid(int surface_elems, double spacing, int to_export, const char
   make_data_grid_c(&surface_elems, &spacing, &to_export, filename, &filename_len, groupname, &groupname_len);
 }
 
+
 void define_rad_elem_from_file(const char *FIELDFILE)
 {
   int filename_len = (int)strlen(FIELDFILE);
@@ -140,3 +144,23 @@ void volume_of_mesh(double *volume_model, double *volume_tree)
 {
   volume_of_mesh_c(volume_model, volume_tree);
 }
+
+void write_elem_geometry_2d(const char *ELEMFILE)
+{
+  int filename_len = (int)strlen(ELEMFILE);
+  write_elem_geometry_2d_c(ELEMFILE, &filename_len);
+}
+
+void write_geo_file(int ntype, const char *GEOFILE)
+{
+  int filename_len = (int)strlen(GEOFILE);
+  write_geo_file_c(&ntype, GEOFILE, &filename_len);
+}
+
+void write_node_geometry_2d(const char *NODEFILE)
+{
+  int filename_len = (int)strlen(NODEFILE);
+  write_node_geometry_2d_c(NODEFILE, &filename_len);
+}
+
+

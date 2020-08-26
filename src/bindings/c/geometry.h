@@ -24,5 +24,8 @@ SHO_PUBLIC void element_connectivity_1d();
 SHO_PUBLIC void evaluate_ordering();
 SHO_PUBLIC void set_initial_volume(int Gdirn, double COV, double total_volume, double Rmax, double Rmin);
 SHO_PUBLIC void volume_of_mesh(double *volume_model, double *volume_tree);
+SHO_PUBLIC void write_elem_geometry_2d(const char *ELEMFILE);
+SHO_PUBLIC void write_geo_file(int ntype, const char *GEOFILE);
+SHO_PUBLIC void write_node_geometry_2d(const char *NODEFILE);
 
 #endif /* AETHER_GEOMETRY_H */

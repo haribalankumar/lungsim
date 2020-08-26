@@ -186,6 +186,7 @@ contains
 
   end subroutine make_data_grid_c
 
+
 !
 !###################################################################################
 !
@@ -413,6 +414,107 @@ contains
   end subroutine volume_of_mesh_c
 
 
+!!!#############################################################################
+
+  subroutine write_geo_file(type, filename)
+    !*write_geo_file:* converts a surface mesh (created using make_2d_vessel_from_1d)
+    ! into a gmsh formatted mesh and writes to file. 
+    ! options on 'type': 1== single layered surface mesh of the vessel wall
+    !                    2== double-layered thick-walled volume mesh of vessel wall
+    !                    3== volume mesh of vessel lumen
+    !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_WRITE_GEO_FILE" :: WRITE_GEO_FILE
+
+    integer,intent(in) :: type
+    character(len=*),intent(in) :: filename
+    !     Local parameters
+    integer :: j, ncount_loop = 0, ncount_point = 0, ncount_spline = 0, &
+         nl_offset,np,np_offset
+    integer,parameter :: ifile = 10
+    integer,allocatable :: element_spline(:,:),elem_surfaces(:,:)
+    real(dp),parameter :: lc0 = 1.0_dp, lc1 = 1.0_dp
+    real(dp),allocatable :: node_xyz_offset(:,:)
+    character(len=200) :: opfile
+    character(len=60) :: sub_name
+
+    ! --------------------------------------------------------------------------
+
+    sub_name = 'write_geo_file'
+    call enter_exit(sub_name,1)
+
+    opfile = trim(filename)//'.geo'
+    open(10, file=opfile, status='replace')
+
+    write(ifile,'(''/***********************'')')
+    write(ifile,'(''*'')')
+    write(ifile,'(''* Conversion of LungSim to GMSH'')')
+    write(ifile,'(''*'')')
+    write(ifile,'(''***********************/'')')
+
+    write(ifile,'(/''lc ='',f8.4,'';'')') lc0
+    write(ifile,'(/''sc ='',f8.4,'';'')') lc1
+    write(ifile,'(/)')
+
+    allocate(element_spline(4,num_elems_2d*2))
+    allocate(elem_surfaces(5,num_elems_2d))
+    element_spline = 0
+    elem_surfaces = 0
+    ncount_spline = 0 
+    np_offset = 0
+
+    if(type.eq.1)then
+!!! write out a surface mesh that describes a structured vessel surface
+       call write_surface_geo(element_spline,elem_surfaces,ifile,ncount_point, &
+            ncount_loop,ncount_spline,np_offset)
+
+    else if(type.eq.2)then
+!!! write out a volume that encloses a thick-walled vessel tree. Make a gmsh .geo file
+!!! for the surface of the tree, then copy, scale, and translate to get an 'outer shell'.
+!!! Join the inner and outer shells at the entry and exits.
+
+       allocate(node_xyz_offset(3,num_nodes_2d))
+       node_xyz_offset = 0.0_dp
+       call write_surface_geo(element_spline,elem_surfaces,ifile,ncount_point, &
+            ncount_loop,ncount_spline,np_offset)
+       call geo_node_offset(node_xyz_offset)
+
+       do np = 1,num_nodes_2d
+          forall (j = 1:3) node_xyz_2d(1,1,j,np) = node_xyz_2d(1,1,j,np) &
+               + node_xyz_offset(j,np)
+       enddo
+       np_offset = ncount_point
+       nl_offset = ncount_spline
+       call write_surface_geo(element_spline,elem_surfaces,ifile,ncount_point, &
+            ncount_loop,ncount_spline,np_offset)
+       do np = 1,num_nodes_2d
+          forall (j = 1:3) node_xyz_2d(1,1,j,np) = node_xyz_2d(1,1,j,np) &
+               - node_xyz_offset(j,np)
+       enddo
+       ! cap the entry and exits
+       call geo_entry_exit_cap(element_spline,ifile,ncount_loop, &
+            ncount_spline,np_offset,nl_offset)
+       deallocate(node_xyz_offset)
+
+    else if(type.eq.3)then
+!!! write out a volume mesh for the vessel lumen, where the vessel surface mesh is the
+!!! exterior. Make a .gmsh file that includes the vessel surfaces, surfaces that join to a vessel
+!!! centreline, and surfaces that 'cap' each vessel segment entry and exit.
+
+       call write_surface_geo(element_spline,elem_surfaces,ifile,ncount_point, &
+            ncount_loop,ncount_spline,np_offset)
+       call write_3d_geo(element_spline,elem_surfaces,ifile,ncount_point, &
+            ncount_loop,ncount_spline)
+    endif
+
+    deallocate(element_spline)
+    deallocate(elem_surfaces)
+    close(ifile)
+
+    call enter_exit(sub_name,2)
+
+  end subroutine write_geo_file
+
+
+
   function get_local_node_f_c(ndimension,np_global) result(get_local_node) bind(C, name="get_local_node_f_c")
     use arrays, only: dp
     use geometry, only: get_local_node_f
@@ -426,6 +528,73 @@ contains
   end function get_local_node_f_c
 
 
+
+!###################################################################################
+!
+  subroutine write_elem_geometry_2d_c(elemfile, filename_len) bind(C, name="write_elem_geometry_2d_c")
+    use iso_c_binding, only: c_ptr
+    use utils_c, only: strncpy
+    use other_consts, only: MAX_FILENAME_LEN
+    use geometry, only: write_elem_geometry_2d
+    implicit none
+
+    integer,intent(in) :: filename_len
+    type(c_ptr), value, intent(in) :: elemfile
+    character(len=MAX_FILENAME_LEN) :: filename_f
+
+    call strncpy(filename_f, elemfile, filename_len)
+#if defined _WIN32 && defined __INTEL_COMPILER
+    call so_write_elem_geometry_2d(filename_f)
+#else
+    call write_elem_geometry_2d(filename_f)
+#endif
+
+  end subroutine write_elem_geometry_2d_c
+!
+!###################################################################################
+!
+  subroutine write_geo_file_c(ntype, geofile, filename_len) bind(C, name="write_geo_file_c")
+    use iso_c_binding, only: c_ptr
+    use utils_c, only: strncpy
+    use other_consts, only: MAX_FILENAME_LEN
+    use geometry, only: write_geo_file
+    implicit none
+
+    integer,intent(in) :: ntype, filename_len
+    type(c_ptr), value, intent(in) :: geofile
+    character(len=MAX_FILENAME_LEN) :: filename_f
+
+    call strncpy(filename_f, geofile, filename_len)
+#if defined _WIN32 && defined __INTEL_COMPILER
+    call so_write_geo_file(ntype, filename_f)
+#else
+    call write_geo_file(ntype, filename_f)
+#endif
+
+  end subroutine write_geo_file_c
+!
+!###################################################################################
+!
+  subroutine write_node_geometry_2d_c(nodefile, filename_len) bind(C, name="write_node_geometry_2d_c")
+    use iso_c_binding, only: c_ptr
+    use utils_c, only: strncpy
+    use other_consts, only: MAX_FILENAME_LEN
+    use geometry, only: write_node_geometry_2d
+    implicit none
+
+    integer,intent(in) :: filename_len
+    type(c_ptr), value, intent(in) :: nodefile
+    character(len=MAX_FILENAME_LEN) :: filename_f
+
+    call strncpy(filename_f, nodefile, filename_len)
+#if defined _WIN32 && defined __INTEL_COMPILER
+    call so_write_node_geometry_2d(filename_f)
+#else
+    call write_node_geometry_2d(filename_f)
+#endif
+
+  end subroutine write_node_geometry_2d_c
+!
+!###################################################################################
+
 end module geometry_c
-
-
