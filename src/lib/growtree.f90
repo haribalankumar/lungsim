@@ -770,12 +770,11 @@ contains
   !*grow_tree:* the main growing subroutine (public). Genertes a volume-filling
   ! tree into a closed surface.
   !
-  subroutine grow_tree(parent_ne,surface_elems,angle_max,angle_min,&
+  subroutine grow_tree(parent_ne,angle_max,angle_min,&
        branch_fraction,length_limit,shortest_length,rotation_limit,to_export,filename)
     !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_GROW_TREE" :: GROW_TREE
 
     integer,intent(in)  :: parent_ne                ! list of end branch elements to grow from
-    integer,intent(in)  :: surface_elems(:)         ! list of surface elements defining the host region
     real(dp),intent(in) :: angle_max                ! maximum branch angle with parent; in degrees
     real(dp),intent(in) :: angle_min                ! minimum branch angle with parent; in degrees
     real(dp),intent(in) :: branch_fraction          ! fraction of distance (to COFM) to branch
@@ -820,14 +819,14 @@ contains
     endif
 
 
-    call triangles_from_surface(num_triangles,num_vertices,surface_elems,triangle,vertex_xyz)
+    call triangles_from_surface(num_triangles,num_vertices,triangle,vertex_xyz)
 
 !!! We can estimate the number of elements in the generated model based on the
 !!! number of data (seed) points. i.e. N = 2*N_data - 1. So the total number of
 !!! elements following tree generation will be ~ num_elems + 2*num_data. Use this estimate
 !!! to increase the node and element arrays.
-    num_elems_new = num_elems + 2*num_data + 100
-    num_nodes_new = num_nodes + 2*num_data + 100
+    num_elems_new = num_elems + 2*num_data + 1000
+    num_nodes_new = num_nodes + 2*num_data + 1000
     call reallocate_node_elem_arrays(num_elems_new,num_nodes_new)
 
 !!! Allocate memory for temporary arrays (need a more intelligent way of estimating size!)
@@ -1074,8 +1073,8 @@ contains
 !!! calculate branch generations and orders
     call evaluate_ordering
 !!! deallocate temporary arrays
-    deallocate(vertex_xyz)
-    deallocate(triangle)
+!   deallocate(vertex_xyz)
+!   deallocate(triangle)
     deallocate(local_parent_temp)
     deallocate(local_parent)
     deallocate(map_seed_to_elem)

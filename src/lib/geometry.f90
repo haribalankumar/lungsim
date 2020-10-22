@@ -1171,13 +1171,12 @@ contains
 
 !!!#############################################################################
 
-  subroutine triangles_from_surface(num_triangles,num_vertices,surface_elems, &
+  subroutine triangles_from_surface(num_triangles,num_vertices, &
        triangle,vertex_xyz)
     !*triangles_from_surface:* generates a linear surface mesh of triangles
     ! from an existing high order surface mesh. 
     
     integer :: num_triangles,num_vertices
-    integer,intent(in) :: surface_elems(:)
     integer,allocatable :: triangle(:,:)
     real(dp),allocatable :: vertex_xyz(:,:)
     ! Local variables
@@ -1198,13 +1197,11 @@ contains
     if(.not.allocated(vertex_xyz)) allocate(vertex_xyz(3,num_elems_2d*(ndiv+1)**2))
     triangle = 0
     vertex_xyz = 0.0_dp
-    num_surfaces = count(surface_elems.ne.0)
     num_triangles = 0
     num_vertices = 0
     num_tri_vert = 0 
 
-    do nelem=1, num_surfaces
-       ne = surface_elems(nelem)
+    do ne=1, num_elems_2d
        four_nodes = .false.
        repeat = '0_0'
        if(elem_nodes_2d(1,ne).eq.elem_nodes_2d(2,ne)) repeat = '1_0'
@@ -1307,12 +1304,11 @@ contains
 
 !!!#############################################################################
   
-  subroutine make_data_grid(surface_elems,spacing,to_export,filename,groupname)
+  subroutine make_data_grid(spacing,to_export,filename,groupname)
     !*make_data_grid:* makes a regularly-spaced 3D grid of data points to
     ! fill a bounding surface 
     !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_MAKE_DATA_GRID" :: MAKE_DATA_GRID
     
-    integer,intent(in) :: surface_elems(:)
     real(dp),intent(in) :: spacing
     logical,intent(in) :: to_export
     character(len=*),intent(in) :: filename
@@ -1333,8 +1329,7 @@ contains
     sub_name = 'make_data_grid'
     call enter_exit(sub_name,1)
     
-    call triangles_from_surface(num_triangles,num_vertices,surface_elems, &
-         triangle,vertex_xyz)
+    call triangles_from_surface(num_triangles,num_vertices,triangle,vertex_xyz)
 
     if(offset.gt.0.0_dp)then
 !!! generate within a scaled mesh, then return to original size afterwards
