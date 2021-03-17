@@ -12,6 +12,8 @@ void define_mesh_geometry_test_c(void);
 void define_node_geometry_c(const char *NODEFILE, int *filename_len);
 void define_node_geometry_2d_c(const char *NODEFILE, int *filename_len);
 void define_data_geometry_c(const char *DATAFILE, int *filename_len);
+
+void split_datacloud_c(const char *lobe, int *to_export);
 void group_elem_parent_term_c(int *ne_parent);
 void make_data_grid_c(int *surface_elems, double *spacing, int *to_export, const char *filename, int *filename_len, const char *groupname, int *groupname_len);
 extern void make_2d_vessel_from_1d_c(int *elemlist_len, int elemlist[]);
@@ -78,6 +80,11 @@ void define_data_geometry(const char *DATAFILE)
 {
   int filename_len = (int)strlen(DATAFILE);
   define_data_geometry_c(DATAFILE, &filename_len);
+}
+
+void split_datacloud(const char *lobe, int to_export)
+{
+  split_datacloud_c(lobe, &to_export);
 }
 
 void group_elem_parent_term(int ne_parent)

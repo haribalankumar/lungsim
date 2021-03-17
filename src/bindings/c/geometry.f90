@@ -247,6 +247,32 @@ contains
 
   end subroutine define_data_geometry_c
 
+
+!###################################################################################
+!
+  subroutine split_datacloud_c(lobe, to_export) bind(C,name="split_datacloud_c")
+
+    use arrays,only: dp
+    use iso_c_binding, only: c_ptr
+    use utils_c, only: strncpy
+    use geometry, only: split_datacloud
+    implicit none
+
+    logical,intent(in) :: to_export
+    type(c_ptr), value, intent(in) :: lobe
+
+    character(len=3) :: lobe_f
+    call strncpy(lobe_f, lobe,3)
+
+
+#if defined _WIN32 && defined __INTEL_COMPILER
+    call so_split_datacloud(lobe_f , to_export)
+#else
+    call split_datacloud(lobe_f , to_export)
+#endif
+
+  end subroutine split_datacloud_c
+
 !
 !###################################################################################
 !
