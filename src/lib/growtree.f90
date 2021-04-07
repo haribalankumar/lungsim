@@ -39,6 +39,7 @@ module growtree
   !Interfaces
   private
   public grow_tree,smooth_1d_tree
+  public list_mesh_statistics
 
 contains
 
@@ -1544,6 +1545,308 @@ contains
 
   end function closest_seed_to_node_in_group
 
+  !
+  !###################################################################################
+  !
+
+    subroutine list_mesh_statistics(filename, order_type)
+    !DEC$ ATTRIBUTES DLLEXPORT,ALIAS:"SO_LIST_MESH_STATISTICS" :: LIST_MESH_STATISTICS
+
+  !     nindex(i) stores the order type (i=1,2,3,4 for generation, Horsfield
+  !     order, Strahler order, diameter-defined Strahler order
+  !     respectively) for the current element.
+
+      character(len=*),intent(in) :: filename
+      integer,intent(in)  :: order_type  ! order type 1=generation, 2=Horsfield, 3=Strahler
+
+
+      ! Local Variables
+      integer :: i,ne,ne0,ne_next,ne_sibling,ne0_0,ngen,nHord,nmax_order,nSord, &
+           num_in_order(40),n_branch,n_major,n_minor,n_order,n_segments
+      real(dp),allocatable :: stats(:,:)
+      real(dp) :: angle,angle2,means(13),mean_diameter,norm_1(3),norm_2(3), &
+           ratio,ratio_L_D(40),r_squared,slope,sum_brnch_angle(40),sum_crosssec(40), &
+           sum_diameter(40),sum_length(40),sum_rotn_angle(40),sum_volume(40), &
+           total_length,vect_1(3),vect_2(3), &
+           x_list(50),y_list(50)
+      logical :: add,found,major,minor
+
+      character(len=60) :: sub_name = 'list_mesh_statistics'
+
+       
+      call enter_exit(sub_name,1)
+
+      allocate(stats(11,num_elems))
+      
+      means = 0.0_dp
+      num_in_order(:) = 0
+      nmax_order = 0
+      sum_crosssec = 0.0_dp
+      sum_diameter = 0.0_dp
+      sum_length = 0.0_dp
+      sum_volume = 0.0_dp
+      sum_brnch_angle = 0.0_dp
+      sum_rotn_angle = 0.0_dp
+      ratio_L_D = 0.0_dp
+      
+      n_branch = 0  ! will count the total number of branches (<= number of elements)
+      n_major = 0
+      n_minor = 0
+      
+      do ne = 1,num_elems
+         ne0 = elem_cnct(-1,1,ne)
+         write(*,*) 'parent=',ne,ne0
+         add = .false.
+         ! count the element only if it is at the start of a branch
+         if(ne0.eq.0)then !stem of tree
+            add = .true.
+         !only count as extra branch if at start
+         else if(ne0.ne.0.and.elem_ordrs(2,ne0).ne.elem_ordrs(2,ne))then  
+            add = .true.
+         endif
+         
+         if(add)then
+            n_branch = n_branch + 1    ! increment the number of branches
+            n_order = elem_ordrs(order_type,ne) ! the 1. generation, 2. Horsfield order, or 3. Strahler order
+            nmax_order = max(n_order,nmax_order)  ! to find the maximum order
+            num_in_order(n_order) = num_in_order(n_order) + 1  ! count branches in each order
+            
+            if(ne.ne.1) then ! EXCEPT FOR TRACHEA
+            ! determine whether this is a major or minor branch
+            ! where major branch == largest radius, or smallest angle if radii the same
+            if(elem_cnct(1,1,ne0).eq.ne)then ! get the element number of the 'sibling' branch
+               ne_sibling = elem_cnct(1,2,ne0)
+            else
+               ne_sibling = elem_cnct(1,1,ne0)
+            endif
+            write(*,*) 'sibling finder, ne,neparent,sibling=',ne,ne0, ne_sibling
+            write(*,*) 'sibling finder=',elem_cnct(1,1,ne0),elem_cnct(1,2,ne0)
+            write(*,*) 'elem_field=',elem_field(ne_radius,ne_sibling)
+            major = .false.
+            minor = .false.
+            if(abs(elem_field(ne_radius,ne)-elem_field(ne_radius,ne_sibling)).lt.1.0e-6)then
+               ! when radii are the same, use branch angle to classify as major or minor
+               vect_1(:) = elem_direction(:,ne)  ! direction of branch
+               vect_2(:) = elem_direction(:,ne0) ! direction of parent branch
+               angle = angle_btwn_vectors(vect_1,vect_2)
+               vect_1(:) = elem_direction(:,ne_sibling)  ! direction of branch
+               angle2 = angle_btwn_vectors(vect_1,vect_2)
+               if(angle.gt.angle2)then
+                  minor = .true.
+               elseif(angle.lt.angle2)then
+                  major = .true.
+               endif
+            else
+               ! classify based on the radii
+               if(elem_field(ne_radius,ne).gt.elem_field(ne_radius,ne_sibling))then
+                  major = .true.
+               else
+                  minor = .true.
+               endif
+            endif
+            endif !END ANGLE CALC FOR NON-TRACHEA
+            
+            
+            ! Add length of all elements along branch, calculate mean diameter
+            n_segments = 1
+            mean_diameter = elem_field(ne_radius,ne) * 2.0_dp
+            total_length = elem_field(ne_length,ne)
+            ne_next = ne
+            do while(elem_cnct(1,0,ne_next).eq.1.and.elem_symmetry(ne_next).eq.1)
+              ne_next = elem_cnct(1,1,ne_next) !next segment
+              total_length = total_length + elem_field(ne_length,ne_next) !sum lengths
+              mean_diameter = mean_diameter + elem_field(ne_radius,ne_next) * 2.0_dp
+              n_segments = n_segments + 1 !count number of segments in branch
+            enddo
+            mean_diameter = mean_diameter/dble(n_segments)
+            ! mean branch diameter for the order
+            sum_diameter(n_order) = sum_diameter(n_order) + mean_diameter
+            ! total branch length for the order
+            sum_length(n_order) = sum_length(n_order) + total_length
+            ! total branch volume for the order
+            sum_volume(n_order) = sum_volume(n_order) +  &
+                        total_length*pi*(mean_diameter**2)/4.0_dp
+            ! total branch cross-sectional area for the order
+            sum_crosssec(n_order) = sum_crosssec(n_order) +  &
+                        pi*(mean_diameter**2)/4.0_dp
+            ! branch L:D ratio for the order
+            ratio_L_D(n_order) = ratio_L_D(n_order) + total_length/mean_diameter
+            ! branch L:D for summary statistics
+            stats(5,n_branch) = total_length/mean_diameter
+            means(5) = means(5) + total_length/mean_diameter
+            ! branch angle to the parent branch, and rotation angle of branching plane
+            if(ne0.ne.0)then
+               vect_1(:) = elem_direction(:,ne)  ! direction of branch
+               vect_2(:) = elem_direction(:,ne0) ! direction of parent branch
+               angle = 180.0_dp/pi*angle_btwn_vectors(vect_1,vect_2)
+               ! branch angle for the order
+               sum_brnch_angle(n_order) = sum_brnch_angle(n_order) + angle
+               ! branch angle for summary statistics
+               stats(1,n_branch) = angle
+               if(major)then
+                  n_major = n_major + 1
+                  stats(4,n_major) = angle ! major angle
+                  stats(7,n_major) = total_length/mean_diameter ! major L:D
+                  stats(8,n_major) = elem_field(ne_radius,ne_sibling)/elem_field(ne_radius,ne) ! Dmin/Dmaj
+                  stats(11,n_major) = elem_field(ne_radius,ne)/elem_field(ne_radius,ne0) ! Dmaj/Dpnt
+               elseif(minor)then
+                  n_minor = n_minor + 1
+                  stats(3,n_minor) = angle ! minor angle
+                  stats(6,n_minor) = total_length/mean_diameter ! minor L:D
+                  stats(8,n_minor) = elem_field(ne_radius,ne)/elem_field(ne_radius,ne_sibling) ! Dmin/Dmaj
+                  stats(10,n_minor) = elem_field(ne_radius,ne)/elem_field(ne_radius,ne0) ! Dmin/Dpnt
+               endif
+               stats(9,n_branch) = elem_field(ne_radius,ne)/elem_field(ne_radius,ne0) ! D/Dpnt
+               
+               if(elem_cnct(1,0,ne0).gt.1.and.elem_ordrs(1,ne).gt.2)then
+                  vect_1(:) = elem_direction(:,elem_cnct(1,1,ne0)) ! 1st child of parent
+                  vect_2(:) = elem_direction(:,elem_cnct(1,2,ne0)) ! 2nd child of parent
+                  norm_1 = unit_norm_to_plane_two_vectors(vect_1,vect_2)
+                  ne0_0 = elem_cnct(-1,1,ne0) ! immediate parent element
+                  found = .false.
+                  do while(.not.found)
+                     if(elem_ordrs(1,ne0_0).ne.elem_ordrs(1,ne0))then ! at bifurcation
+                        vect_1(:) = elem_direction(:,elem_cnct(1,1,ne0_0)) ! 1st child of parent
+                        vect_2(:) = elem_direction(:,elem_cnct(1,2,ne0_0)) ! 2nd child of parent
+                        norm_2 = unit_norm_to_plane_two_vectors(vect_1,vect_2)
+                        found = .true.
+                     else
+                        ne0_0 = elem_cnct(-1,1,ne0_0) ! get the parent element
+                     endif
+                  enddo
+                  sum_rotn_angle(n_order) = sum_rotn_angle(n_order) + &
+                       180.0_dp/pi*angle_btwn_vectors(norm_1,norm_2)
+                  stats(2,n_branch) = 180.0_dp/pi*angle_btwn_vectors(norm_1,norm_2) ! rotation angle
+               endif
+            endif
+            
+         endif ! add a new branch
+      enddo ! for each element
+
+      do n_order = 1,nmax_order
+         sum_diameter(n_order) = sum_diameter(n_order)/dble(num_in_order(n_order))
+         sum_length(n_order) = sum_length(n_order)/dble(num_in_order(n_order))
+         ratio_L_D(n_order) = ratio_L_D(n_order)/dble(num_in_order(n_order))
+         sum_brnch_angle(n_order) = sum_brnch_angle(n_order)/dble(num_in_order(n_order))
+         sum_rotn_angle(n_order) = sum_rotn_angle(n_order)/dble(num_in_order(n_order))
+      enddo
+
+      means(1) = sum(stats(1,:))/dble(n_branch-1)  ! branch angle
+      means(2) = sum(stats(2,:))/dble(n_branch-3)  ! rotation angle
+      means(3) = sum(stats(3,:))/dble(n_minor)     ! minor angle
+      means(4) = sum(stats(4,:))/dble(n_major)     ! major angle
+      means(5) = sum(stats(5,:))/dble(n_branch)    ! L/D
+      means(6) = sum(stats(6,:))/dble(n_minor)     ! L/D (minor)
+      means(7) = sum(stats(7,:))/dble(n_major)     ! L/D (major)
+      means(8) = sum(stats(8,:))/dble(n_branch-1)  ! D(min)/D(maj)
+      means(9) = sum(stats(9,:))/dble(n_branch-1)  ! D/D(pnt)
+      means(10) = sum(stats(10,:))/dble(n_minor)   ! D(min)/D(pnt)
+      means(11) = sum(stats(11,:))/dble(n_major)   ! D(maj)/D(pnt)
+
+      do i = 1,11
+         stats(i,:) = stats(i,:) - means(i)
+         stats(i,:) = stats(i,:)*stats(i,:)
+      enddo
+
+      write(*,'(115(''-''))')
+      if(order_type.eq.1)then
+         write(10,'(/''Generation  branches   Length     Diam      L:D    Tot_xsec  Tot_vol    Brn_ang   Rtn_ang '')')
+         write(*,'(/''Generation  branches   Length     Diam      L:D    Tot_xsec  Tot_vol    Brn_ang   Rtn_ang '')')
+      elseif(order_type.eq.2)then
+         write(10,'(/''Horsfield   branches   Length     Diam      L:D    Tot_xsec  Tot_vol    Brn_ang   Rtn_ang '')')
+         write(*,'(/''Horsfield   branches   Length     Diam      L:D    Tot_xsec  Tot_vol    Brn_ang   Rtn_ang '')')
+      elseif(order_type.eq.3)then
+         write(10,'(/''Strahler    branches   Length     Diam      L:D    Tot_xsec  Tot_vol    Brn_ang   Rtn_ang '')')
+         write(*,'(/''Strahler    branches   Length     Diam      L:D    Tot_xsec  Tot_vol    Brn_ang   Rtn_ang '')')
+      endif
+      write(10,'(''            (number)    (mm)      (mm)              (mm^2)     (mL)      (deg)     (deg) '')')
+      write(*,'(''            (number)    (mm)      (mm)              (mm^2)     (mL)      (deg)     (deg) '')')
+      write(10,'(115(''-''))')
+      write(*,'(115(''-''))')
+
+      do n_order = 1,nmax_order
+         write(10,'( i6, 6x, i6, 7(f10.2) )') n_order, num_in_order(n_order), &
+              sum_length(n_order),sum_diameter(n_order),ratio_L_D(n_order),sum_crosssec(n_order), &
+              sum_volume(n_order)/1.0e3_dp,sum_brnch_angle(n_order),sum_rotn_angle(n_order)
+         write(*,'( i6, 6x, i6, 7(f10.2) )') n_order, num_in_order(n_order), &
+              sum_length(n_order),sum_diameter(n_order),ratio_L_D(n_order),sum_crosssec(n_order), &
+              sum_volume(n_order)/1.0e3_dp,sum_brnch_angle(n_order),sum_rotn_angle(n_order)
+      enddo
+
+      write(*,'(115(''-''))')
+      write(*,'('' Summary statistics:'')')
+      write(*,'('' Branch angle   = '',f8.2,'' ('',f5.2,'') degrees'',4x,''|  [36.1, 37.28, 39, 43]'')')  &
+           means(1), sqrt(sum(stats(1,:))/dble(n_branch-1))
+      write(*,'('' Rotation angle = '',f8.2,'' ('',f5.2,'') degrees'',4x,''|  [76.1, 79, 90]'')') &
+           means(2), sqrt(sum(stats(2,:))/dble(n_branch-3))
+      write(*,'('' Minor angle    = '',f8.2,'' ('',f5.2,'') degrees'',4x,''|  [36.6]'')') &
+           means(3), sqrt(sum(stats(3,:))/dble(n_minor))
+      write(*,'('' Major angle    = '',f8.2,'' ('',f5.2,'') degrees'',4x,''|  [35.5]'')') &
+           means(4), sqrt(sum(stats(4,:))/dble(n_major))
+      write(*,'('' L/D            = '',f8.2,'' ('',f5.2,'') '',11x,''|  [3.04,3.09,3.14,2.8-3.25]'')') &
+           means(5), sqrt(sum(stats(5,:))/dble(n_branch))
+      write(*,'('' L/D (minor)    = '',f8.2,'' ('',f5.2,'') '',11x,''|  [3.63]'')') &
+           means(6), sqrt(sum(stats(6,:))/dble(n_minor))
+      write(*,'('' L/D (major)    = '',f8.2,'' ('',f5.2,'') '',11x,''|  [2.48]'')') &
+           means(7), sqrt(sum(stats(7,:))/dble(n_major))
+      write(*,'('' D(min)/D(maj)  = '',f8.2,'' ('',f5.2,'') '',11x,''|  [0.85, 0.82, 0.74, 0.86]'')') &
+           means(8), sqrt(sum(stats(8,:))/dble(n_branch-1))
+      write(*,'('' D/D(pnt)       = '',f8.2,'' ('',f5.2,'') '',11x,''|  [0.71, 0.83, 0.78, 0.79, 0.76]'')') &
+           means(9), sqrt(sum(stats(9,:))/dble(n_branch-1))
+      write(*,'('' D(min)/D(pnt)  = '',f8.2,'' ('',f5.2,'') '',11x,''|  [0.66]'')') &
+           means(10), sqrt(sum(stats(10,:))/dble(n_minor))
+      write(*,'('' D(maj)/D(pnt)  = '',f8.2,'' ('',f5.2,'') '',11x,''|  [0.79, 0.86]'')') &
+           means(11), sqrt(sum(stats(11,:))/dble(n_major))
+      write(*,'('' L/L(pnt)       = '',f8.2,'' ('',f5.2,'') '',11x,''|  [1.18, 0.94]'')') 0.0_dp,0.0_dp
+      write(*,'('' L1/L2 (L1<L2)  = '',f8.2,'' ('',f5.2,'') '',11x,''|  [0.52, 0.58, 0.62]'')') 0.0_dp,0.0_dp
+
+
+      if(order_type.gt.1)then ! only for Horsifled and Strahler ordering
+         ! also - RbS, RlS, RdS, RbH, RlH, RdH
+         forall(i = 1:nmax_order) x_list(i) = dble(i)
+
+         ! branching ratio - 
+         forall(i = 1:nmax_order) y_list(i) = log10(dble(num_in_order(nmax_order-i+1)))
+         call linear_regression(nmax_order,r_squared,slope,x_list,y_list)
+         ratio = 10.0_dp**(abs(slope))
+         if(order_type.eq.2)then ! Horsfield
+            write(*,'('' Rb_H'',11x,''= '',f8.2,'' ('',f5.2,'') '',11x,''|  [1.38]'')') &
+                 ratio,r_squared
+         else if(order_type.eq.3)then ! Strahler
+            write(*,'('' Rb_S'',11x,''= '',f8.2,'' ('',f5.2,'') '',11x,''|  [2.51-2.81]'')') &
+                 ratio,r_squared
+         endif
+         
+         ! length ratio - 
+         forall(i = 1:nmax_order) y_list(i) = log10(sum_length(i))
+         call linear_regression(nmax_order,r_squared,slope,x_list,y_list)
+         ratio = 10.0_dp**(abs(slope))
+         if(order_type.eq.2)then ! Horsfield
+            write(*,'('' Rl_H'',11x,''= '',f8.2,'' ('',f5.2,'') '',11x,''|  [~1.11]'')') &
+                 ratio,r_squared
+         else if(order_type.eq.3)then ! Strahler
+            write(*,'('' Rl_S'',11x,''= '',f8.2,'' ('',f5.2,'') '',11x,''|  [1.33-1.46]'')') &
+                 ratio,r_squared
+         endif
+         
+         ! diameter ratio - 
+         forall(i = 1:nmax_order) y_list(i) = log10(sum_diameter(i))
+         call linear_regression(nmax_order,r_squared,slope,x_list,y_list)
+         ratio = 10.0_dp**(abs(slope))
+         if(order_type.eq.2)then ! Horsfield
+            write(*,'('' Rd_H'',11x,''= '',f8.2,'' ('',f5.2,'') '',11x,''|  [~1.11]'')') &
+                 ratio,r_squared
+         else if(order_type.eq.3)then ! Strahler
+            write(*,'('' Rd_S'',11x,''= '',f8.2,'' ('',f5.2,'') '',11x,''|  [1.35-1.45]'')') &
+                 ratio,r_squared
+         endif
+         
+      endif
+
+      deallocate(stats)
+      
+    end subroutine list_mesh_statistics
+
 
   !###############################################################
   !
@@ -1599,7 +1902,70 @@ contains
   end function vector_for_angle_limit
 
 
-  !###############################################################
+! ##########################################################################
+!
+  subroutine linear_regression(N,r_squared,slope,X,Y)
+
+   !#### Subroutine: LINREGRESS
+   !###  Description:
+   !###    Calculates linear regression equation and r-squared
+   !###    correlation coefficient for a set of data.
+
+   !*** Created by Kelly Burrowes, March 2003.
+     use arrays,only: dp
+     use diagnostics,only: enter_exit
+
+     !  Parameter list
+     integer, INTENT(IN) :: N
+     real(dp), INTENT(IN) :: X(N),Y(N)
+     real(dp), INTENT(OUT) :: r_squared,slope
+
+    !!  Local variables
+     integer :: i
+     REAL(dp) :: AX,AY,intercept,R,SXX,SXY,SYY
+     REAL(dp) :: XSUM,XT,XXSUM,XYSUM,YSUM,YT
+     character(len=60) :: sub_name
+
+     sub_name = 'linear_regression'
+     call enter_exit(sub_name,1)
+
+     YSUM=0.0_dp
+     XSUM=0.0_dp
+     XXSUM=0.0_dp
+     XYSUM=0.0_dp
+     DO i=1,N
+      YSUM=YSUM+Y(i)
+      XSUM=XSUM+X(i)
+      XYSUM=XYSUM+X(i)*Y(i)
+      XXSUM=XXSUM+X(i)*X(i)
+     ENDDO !N
+
+      !... calculate least squares estimate of straight line thru solution
+      slope=(XYSUM-XSUM*YSUM/N)/(XXSUM-XSUM*XSUM/N)
+      intercept=(YSUM/N)-(slope*XSUM/N)
+
+      !... calculate r-squared correlation coefficient
+      !... see Numerical Recipes, Fortran 77, 2nd edition, page 632.
+      AX=XSUM/N !mean of X
+      AY=YSUM/N !mean of Y
+      SXX=0.0_dp
+      SYY=0.0_dp
+      SXY=0.0_dp
+      DO i=1,N
+        XT=X(i)-AX
+        YT=Y(i)-AY
+        SXX=SXX+XT**2.0_dp
+        SYY=SYY+YT**2.0_dp
+        SXY=SXY+XT*YT
+      ENDDO
+      R=SXY/DSQRT(SXX*SYY)
+      r_squared=R**2
+
+      call enter_exit(sub_name,2)
+  end subroutine linear_regression
+
+
+!###############################################################
 
 end module growtree
 
